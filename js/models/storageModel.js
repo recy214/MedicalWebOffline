@@ -3,6 +3,7 @@
 // --- Gestión de Usuarios ---
 const USERS_KEY = 'usuarios';
 const CURRENT_USER_KEY = 'usuarioActual';
+const ACTIVITY_LOG_KEY = 'registroActividad';
 
 // Datos iniciales para asegurar que siempre haya usuarios de prueba
 const usuariosFijos = [
@@ -13,6 +14,11 @@ const usuariosFijos = [
 // Inicializar usuarios si no existen
 if (!localStorage.getItem(USERS_KEY)) {
   localStorage.setItem(USERS_KEY, JSON.stringify(usuariosFijos));
+}
+
+// Inicializar registro de actividad si no existe
+if (!localStorage.getItem(ACTIVITY_LOG_KEY)) {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify([]));
 }
 
 export const authModel = {
@@ -34,7 +40,67 @@ export const authModel = {
   getCurrentUser: () => JSON.parse(localStorage.getItem(CURRENT_USER_KEY)),
 
   logout: () => {
+    // Registrar salida antes de eliminar el usuario actual
+    const usuario = authModel.getCurrentUser();
+    if (usuario) {
+      authModel.registrarActividad(usuario.id, 'salida');
+    }
     localStorage.removeItem(CURRENT_USER_KEY);
+  },
+  
+  // Funciones para el registro de actividad
+  registrarActividad: (usuarioId, tipo, detalles = '') => {
+    const registro = {
+      usuarioId,
+      tipo, // 'entrada', 'salida', etc.
+      timestamp: new Date().toISOString(),
+      detalles
+    };
+    
+    const registros = JSON.parse(localStorage.getItem(ACTIVITY_LOG_KEY)) || [];
+    registros.push(registro);
+    localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(registros));
+    
+    return registro;
+  },
+  
+  obtenerRegistros: (filtro = {}) => {
+    const registros = JSON.parse(localStorage.getItem(ACTIVITY_LOG_KEY)) || [];
+    
+    // Aplicar filtros si existen
+    if (Object.keys(filtro).length > 0) {
+      return registros.filter(reg => {
+        let coincide = true;
+        
+        if (filtro.usuarioId && reg.usuarioId !== filtro.usuarioId) {
+          coincide = false;
+        }
+        
+        if (filtro.tipo && reg.tipo !== filtro.tipo) {
+          coincide = false;
+        }
+        
+        if (filtro.desde) {
+          const desde = new Date(filtro.desde);
+          const timestamp = new Date(reg.timestamp);
+          if (timestamp < desde) {
+            coincide = false;
+          }
+        }
+        
+        if (filtro.hasta) {
+          const hasta = new Date(filtro.hasta);
+          const timestamp = new Date(reg.timestamp);
+          if (timestamp > hasta) {
+            coincide = false;
+          }
+        }
+        
+        return coincide;
+      });
+    }
+    
+    return registros;
   },
 
   addUser: (newUser) => {

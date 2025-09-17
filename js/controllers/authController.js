@@ -13,11 +13,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const usuarioValido = authModel.validateUser(matriculaOId, contrasena);
 
     if (usuarioValido) {
-      authModel.setCurrentUser({
+      const userData = {
         nombre: usuarioValido.nombre,
         rol: usuarioValido.rol,
         id: usuarioValido.id,
-      });
+      };
+      
+      // Registrar la entrada del usuario
+      authModel.registrarActividad(usuarioValido.id, 'entrada', `Inicio de sesión como ${usuarioValido.rol}`);
+      
+      // Guardar información del usuario actual
+      authModel.setCurrentUser(userData);
+      
       window.location.href = 'menuInicio.html';
     } else {
       alert('ID/Matrícula o contraseña incorrecta.');
