@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Medical Developer</title>
+  <style>
+    body {
+      background: #f0f0f0;
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .contenedor {
+      background: #ffffff;
+      padding: 50px 200px;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+      width: 100%;
+      max-width: 400px;
+    }
+    form label {
+      display: block;
+      margin-bottom: 12px;
+    }
+    form input, form select {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 16px;
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1565c0;
+    }
+    .login-row {
+      display: flex;
+      flex-direction: row-reverse;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .login-row label {
+      min-width: 90px;
+      text-align: right;
+      margin: 0;
+    }
+    .login-row input {
+      flex: 1;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="contenedor">
+    <div id="loginHeader" style="display: flex; align-items: center; justify-content: center; margin-bottom: 24px;">
+  <img src="img/uat-logo-2023.png" alt="Logo izquierdo" style="width: 150px; height: 128px; margin-right: 64px; border-radius: 6px;">
+  <h2 style="margin: 0; font-size: 2.5em; font-weight: 350; color: #66aaee; white-space: nowrap;">Medical Developer</h2>
+  <img src="img/Logo Medical Developer.jpg" alt="Logo derecho" style="width: 130px; height: 128px; margin-left: 64px; border-radius: 6px;">
+    </div>
+    <form id="loginForm">
+      <div class="login-row">
+        <input type="text" name="matricula" required placeholder="Matrícula" id="matriculaInput">
+        <label for="matricula" id="matriculaLabel">Matrícula:</label>
+      </div>
+      <div class="login-row">
+        <input type="password" name="contrasena" required placeholder="Contraseña">
+        <label for="contrasena">Contraseña:</label>
+      </div>
+      <button type="submit">Iniciar Sesión</button>
+      <!--  boton para crear un usuario desde el login
+      <button type="button" id="crearUsuario" style="background:#e29c33; margin-top:8px;">Crear Nuevo Usuario</button>
+      -->
+    </form>
+  </div>
+  <script type="module" src="js/controllers/authController.js"></script>
+</body>
+</html>

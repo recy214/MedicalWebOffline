@@ -1,0 +1,110 @@
+// js/models/storageModel.js
+
+// --- Gestión de Usuarios ---
+const USERS_KEY = 'usuarios';
+const CURRENT_USER_KEY = 'usuarioActual';
+
+// Datos iniciales para asegurar que siempre haya usuarios de prueba
+const usuariosFijos = [
+  { id: 'admin', nombre: 'Administrador', apellidos: '', matricula: 'admin', contrasena: 'admin123', rol: 'admin' },
+  { id: 'pract', nombre: 'Practicante', apellidos: '', matricula: 'pract', contrasena: 'pract123', rol: 'practicante' }
+];
+
+// Inicializar usuarios si no existen
+if (!localStorage.getItem(USERS_KEY)) {
+  localStorage.setItem(USERS_KEY, JSON.stringify(usuariosFijos));
+}
+
+export const authModel = {
+  getUsers: () => JSON.parse(localStorage.getItem(USERS_KEY)) || [],
+  
+  validateUser: (matriculaOId, contrasena) => {
+    const usuarios = authModel.getUsers();
+    return usuarios.find(u => 
+      ((u.rol === 'admin' && (u.id === matriculaOId || u.matricula === matriculaOId)) || 
+       (u.rol === 'practicante' && u.matricula === matriculaOId)) && 
+      u.contrasena === contrasena
+    );
+  },
+
+  setCurrentUser: (usuario) => {
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(usuario));
+  },
+
+  getCurrentUser: () => JSON.parse(localStorage.getItem(CURRENT_USER_KEY)),
+
+  logout: () => {
+    localStorage.removeItem(CURRENT_USER_KEY);
+  },
+
+  addUser: (newUser) => {
+    const usuarios = authModel.getUsers();
+    if (usuarios.some(u => u.matricula === newUser.matricula || u.id === newUser.id)) {
+      alert('Error: La matrícula o el ID ya existen.');
+      return false;
+    }
+    usuarios.push(newUser);
+    localStorage.setItem(USERS_KEY, JSON.stringify(usuarios));
+    return true;
+  },
+
+  deleteUser: (userIndex) => {
+    let usuarios = authModel.getUsers();
+    const userToDelete = usuarios[userIndex];
+    const currentUser = authModel.getCurrentUser();
+    if (userToDelete.id === currentUser.id) {
+        alert('No puedes eliminar tu propia cuenta de administrador.');
+        return;
+    }
+    usuarios.splice(userIndex, 1);
+    localStorage.setItem(USERS_KEY, JSON.stringify(usuarios));
+  },
+
+  updateUser: (userIndex, updatedUser) => {
+    let usuarios = authModel.getUsers();
+    const userToUpdate = usuarios[userIndex];
+    const currentUser = authModel.getCurrentUser();
+    
+    // Verificar si está intentando modificar su propia matrícula o ID siendo administrador
+    if (userToUpdate.id === currentUser.id && 
+        (userToUpdate.matricula !== updatedUser.matricula || userToUpdate.id !== updatedUser.id)) {
+        alert('No puedes modificar tu propia matrícula o ID como administrador.');
+        return false;
+    }
+    
+    // Verificar que la nueva matrícula o ID no existan ya (excepto el usuario actual)
+    const duplicado = usuarios.find((u, i) => 
+        i !== parseInt(userIndex) && 
+        (u.matricula === updatedUser.matricula || u.id === updatedUser.id)
+    );
+    
+    if (duplicado) {
+        alert('Error: La matrícula o el ID ya existen en otro usuario.');
+        return false;
+    }
+    
+    // Actualizar el usuario
+    usuarios[userIndex] = {
+        ...userToUpdate,
+        ...updatedUser
+    };
+    
+    localStorage.setItem(USERS_KEY, JSON.stringify(usuarios));
+    
+    // Si se modificó el usuario actual, actualizar la sesión
+    if (userToUpdate.id === currentUser.id) {
+        authModel.setCurrentUser({
+            nombre: updatedUser.nombre,
+            rol: updatedUser.rol,
+            id: updatedUser.id
+        });
+    }
+    
+    return true;
+  },
+
+  getUserByIndex: (userIndex) => {
+    const usuarios = authModel.getUsers();
+    return usuarios[userIndex] || null;
+  }
+};
