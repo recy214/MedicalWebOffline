@@ -1,6 +1,3 @@
-// categoria-pacientes.js
-// Lógica para la gestión de pacientes con agrupación y formularios de seguimiento
-
 document.addEventListener('DOMContentLoaded', () => {
     // --- LÓGICA DE USUARIO Y NAVEGACIÓN ---
     const params = new URLSearchParams(window.location.search);
@@ -64,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeSection) {
                 activeSection.classList.add('active');
             }
-            // Si se hace clic en "Ingresar nuevo paciente", reseteamos el formulario
             if(targetSectionId === 'nuevo-paciente') {
                 resetearFormularioCompleto();
             }
@@ -126,22 +122,21 @@ document.addEventListener('DOMContentLoaded', () => {
         modalHistoryBody.addEventListener('click', function(event) {
             const target = event.target;
             if (target.classList.contains('delete-record-btn')) {
+                const recordId = parseInt(target.getAttribute('data-record-id'), 10);
                 const matricula = target.getAttribute('data-matricula');
-                const fecha = target.getAttribute('data-fecha');
-                borrarRegistroIndividual(matricula, fecha);
+                borrarRegistroIndividual(recordId, matricula);
             }
         });
     }
 
-    function prepararFormularioDeSeguimiento(matricula) {
-        let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
-        const paciente = pacientes[matricula];
+    async function prepararFormularioDeSeguimiento(matricula) {
+        const paciente = await db.pacientes.get({ matricula });
         if (!paciente) return;
 
         personalDataInputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
-                input.value = paciente.datosPersonales[id] || '';
+                input.value = paciente[id] || '';
                 input.disabled = true;
             }
         });
@@ -164,24 +159,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (imcResultado) imcResultado.textContent = '---';
     }
 
-    function guardarRegistro(registro) {
-        let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
-        const matricula = registro.matricula;
+    async function guardarRegistro(registro) {
+        try {
+            let paciente = await db.pacientes.get({ matricula: registro.matricula });
+            let pacienteId;
 
-        if (pacientes[matricula]) {
-            pacientes[matricula].historial.unshift(registro);
-            pacientes[matricula].datosPersonales = {
-                nombreCompleto: registro.nombreCompleto,
-                edad: registro.edad,
-                carrera: registro.carrera,
-                matricula: registro.matricula,
-                sexo: registro.sexo,
-                semestre: registro.semestre,
-                contacto: registro.contacto
-            };
-        } else {
-            pacientes[matricula] = {
-                datosPersonales: {
+            if (paciente) {
+                pacienteId = paciente.id;
+                await db.pacientes.update(pacienteId, {
+                    nombreCompleto: registro.nombreCompleto,
+                    edad: registro.edad,
+                    carrera: registro.carrera,
+                    sexo: registro.sexo,
+                    semestre: registro.semestre,
+                    contacto: registro.contacto
+                });
+            } else {
+                pacienteId = await db.pacientes.add({
                     nombreCompleto: registro.nombreCompleto,
                     edad: registro.edad,
                     carrera: registro.carrera,
@@ -189,57 +183,76 @@ document.addEventListener('DOMContentLoaded', () => {
                     sexo: registro.sexo,
                     semestre: registro.semestre,
                     contacto: registro.contacto
-                },
-                historial: [registro]
-            };
+                });
+            }
+
+            await db.historialClinico.add({
+                pacienteId: pacienteId,
+                fecha: registro.fecha,
+                peso: registro.peso,
+                altura: registro.altura,
+                imc: registro.imc,
+                presion: registro.presion,
+                glucosa: registro.glucosa,
+                temperatura: registro.temperatura,
+                estadoSinc: 'pendiente'
+            });
+
+        } catch (error) {
+            console.error('Error al guardar el registro:', error);
         }
-        localStorage.setItem('expedientesPacientes', JSON.stringify(pacientes));
     }
 
-    function cargarYMostrarPacientes() {
+    async function cargarYMostrarPacientes() {
         if (!historyBody) return;
-        let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
         historyBody.innerHTML = '';
 
-        for (const matricula in pacientes) {
-            const paciente = pacientes[matricula];
-            const registroMasReciente = paciente.historial[0];
+        const pacientes = await db.pacientes.toArray();
 
-            const fila = document.createElement('tr');
-            fila.innerHTML = `
-                <td>${registroMasReciente.fecha}</td>
-                <td>${paciente.datosPersonales.nombreCompleto}</td>
-                <td>${paciente.datosPersonales.matricula}</td>
-                <td>${paciente.datosPersonales.carrera}</td>
-                <td>${paciente.datosPersonales.edad}</td>
-                <td>${registroMasReciente.peso}</td>
-                <td>${registroMasReciente.altura}</td>
-                <td>${registroMasReciente.imc}</td>
-                <td>
-                    <button class="follow-up-btn" data-matricula="${matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #10b981; background-color: #d1fae5; display: block; width: 100%; margin-bottom: 5px;">Añadir Seguimiento</button>
-                    <button class="view-history-btn" data-matricula="${matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #007bff; background-color: #e7f3ff; display: block; width: 100%; margin-bottom: 5px;">Ver Historial</button>
-                    <button class="delete-btn" data-matricula="${matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #ffaaaa; background-color: #ffdddd; display: block; width: 100%;">Borrar Paciente</button>
-                </td>
-            `;
-            historyBody.appendChild(fila);
+        for (const paciente of pacientes) {
+            const registroMasReciente = await db.historialClinico
+                .where('pacienteId')
+                .equals(paciente.id)
+                .last();
+
+            if (registroMasReciente) {
+                const fila = document.createElement('tr');
+                fila.innerHTML = `
+                    <td>${registroMasReciente.fecha}</td>
+                    <td>${paciente.nombreCompleto}</td>
+                    <td>${paciente.matricula}</td>
+                    <td>${paciente.carrera}</td>
+                    <td>${paciente.edad}</td>
+                    <td>${registroMasReciente.peso}</td>
+                    <td>${registroMasReciente.altura}</td>
+                    <td>${registroMasReciente.imc}</td>
+                    <td>
+                        <button class="follow-up-btn" data-matricula="${paciente.matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #10b981; background-color: #d1fae5; display: block; width: 100%; margin-bottom: 5px;">Añadir Seguimiento</button>
+                        <button class="view-history-btn" data-matricula="${paciente.matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #007bff; background-color: #e7f3ff; display: block; width: 100%; margin-bottom: 5px;">Ver Historial</button>
+                        <button class="delete-btn" data-matricula="${paciente.matricula}" style="cursor:pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid #ffaaaa; background-color: #ffdddd; display: block; width: 100%;">Borrar Paciente</button>
+                    </td>
+                `;
+                historyBody.appendChild(fila);
+            }
         }
     }
     
-    function mostrarHistorialDePaciente(matricula) {
-        let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
-        const paciente = pacientes[matricula];
+    async function mostrarHistorialDePaciente(matricula) {
+        const paciente = await db.pacientes.get({ matricula });
         if (!paciente) return;
 
-        modalPatientName.textContent = `Historial de: ${paciente.datosPersonales.nombreCompleto}`;
+        modalPatientName.textContent = `Historial de: ${paciente.nombreCompleto}`;
         modalHistoryBody.innerHTML = '';
         
-        paciente.historial.forEach(registro => {
+        const historial = await db.historialClinico.where('pacienteId').equals(paciente.id).reverse().toArray();
+
+        historial.forEach(registro => {
             const fila = document.createElement('tr');
             fila.innerHTML = `
                 <td>${registro.fecha}</td>
-                <td>${registro.sexo}</td>
-                <td>${registro.semestre}</td>
-                <td>${registro.contacto}</td>
+                <td>${paciente.sexo}</td>
+                <td>${paciente.semestre}</td>
+                <td>${paciente.contacto}</td>
                 <td>${registro.peso}</td>
                 <td>${registro.altura}</td>
                 <td>${registro.imc}</td>
@@ -247,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${registro.glucosa}</td>
                 <td>${registro.temperatura}</td>
                 <td>
-                    <button class="delete-record-btn" data-matricula="${matricula}" data-fecha="${registro.fecha}" style="cursor:pointer; padding: 3px 8px; font-size: 0.8rem; background-color: #ffdddd; border: 1px solid #ffaaaa; border-radius: 4px;">
+                    <button class="delete-record-btn" data-record-id="${registro.id}" data-matricula="${matricula}" style="cursor:pointer; padding: 3px 8px; font-size: 0.8rem; background-color: #ffdddd; border: 1px solid #ffaaaa; border-radius: 4px;">
                       Borrar
                     </button>
                 </td>
@@ -258,34 +271,29 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.style.display = 'flex';
     }
 
-    function borrarPacienteCompleto(matricula) {
+    async function borrarPacienteCompleto(matricula) {
         if (confirm(`¿Estás seguro de que deseas eliminar al paciente con matrícula ${matricula} y todo su historial?`)) {
-            let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
-            delete pacientes[matricula];
-            localStorage.setItem('expedientesPacientes', JSON.stringify(pacientes));
-            cargarYMostrarPacientes();
+            const paciente = await db.pacientes.get({ matricula });
+            if (paciente) {
+                await db.historialClinico.where('pacienteId').equals(paciente.id).delete();
+                await db.pacientes.delete(paciente.id);
+                cargarYMostrarPacientes();
+            }
         }
     }
     
-    function borrarRegistroIndividual(matricula, fecha) {
-         if (confirm(`¿Estás seguro de que deseas eliminar el registro del ${fecha}?`)) {
-            let pacientes = JSON.parse(localStorage.getItem('expedientesPacientes')) || {};
-            if (pacientes[matricula]) {
-                pacientes[matricula].historial = pacientes[matricula].historial.filter(reg => reg.fecha !== fecha);
-                
-                if (pacientes[matricula].historial.length === 0) {
-                    delete pacientes[matricula];
-                }
-
-                localStorage.setItem('expedientesPacientes', JSON.stringify(pacientes));
-                
-                if (!pacientes[matricula]) {
-                    modal.style.display = 'none';
-                } else {
-                    mostrarHistorialDePaciente(matricula);
-                }
-                cargarYMostrarPacientes();
+    async function borrarRegistroIndividual(recordId, matricula) {
+         if (confirm(`¿Estás seguro de que deseas eliminar este registro?`)) {
+            await db.historialClinico.delete(recordId);
+            const paciente = await db.pacientes.get({ matricula });
+            const remainingRecords = await db.historialClinico.where('pacienteId').equals(paciente.id).count();
+            if (remainingRecords === 0) {
+                await db.pacientes.delete(paciente.id);
+                modal.style.display = 'none';
+            } else {
+                mostrarHistorialDePaciente(matricula);
             }
+            cargarYMostrarPacientes();
         }
     }
 
@@ -327,11 +335,12 @@ document.addEventListener('DOMContentLoaded', () => {
           errorMessage.style.display = 'block';
         } else {
             errorMessage.style.display = 'none';
-            guardarRegistro(registroCompleto);
-            cargarYMostrarPacientes();
-            resetearFormularioCompleto();
-            mostrarConfirmacion('Registro Exitoso', 'Los datos del paciente se han guardado correctamente.');
-            if(historialBtn) historialBtn.click();
+            guardarRegistro(registroCompleto).then(() => {
+                cargarYMostrarPacientes();
+                resetearFormularioCompleto();
+                mostrarConfirmacion('Registro Exitoso', 'Los datos del paciente se han guardado correctamente.');
+                if(historialBtn) historialBtn.click();
+            });
         }
     }
     
@@ -355,20 +364,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function mostrarConfirmacion(titulo, mensaje) {
         const modal = document.createElement('div');
-        modal.style.cssText = `
+        modal.style.cssText = '
           display: flex; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
           background: linear-gradient(135deg, rgba(125, 211, 252, 0.9), rgba(254, 243, 199, 0.9));
           z-index: 9999; justify-content: center; align-items-center;
-        `;
+        ';
         
-        modal.innerHTML = `
+        modal.innerHTML = '
           <div style="background: rgba(255, 255, 255, 0.98); padding: 30px; border-radius: 20px; min-width: 350px; max-width: 500px; text-align: center; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3); border: 2px solid rgba(125, 211, 252, 0.4); position: relative; margin: 20px;">
             <div style="margin-bottom: 20px; font-size: 3rem;">✅</div>
             <h3 style="margin: 0 0 15px 0; font-size: 1.5rem; font-weight: 700; color: transparent; background: linear-gradient(135deg, #06b6d4, #10b981); -webkit-background-clip: text; background-clip: text;">${titulo}</h3>
             <p style="margin: 0 0 25px 0; font-size: 1.1rem; color: #374151; line-height: 1.5;">${mensaje}</p>
-            <button onclick="this.closest('div[style*=\\'position: fixed\\']').remove()" style="background: linear-gradient(135deg, #7dd3fc, #fef3c7); color: #1f2937; border: none; border-radius: 25px; padding: 12px 30px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(125, 211, 252, 0.3);">Aceptar</button>
+            <button onclick="this.closest(\'div[style*=\\'position: fixed\\']\').remove()" style="background: linear-gradient(135deg, #7dd3fc, #fef3c7); color: #1f2937; border: none; border-radius: 25px; padding: 12px 30px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 6px 20px rgba(125, 211, 252, 0.3);">Aceptar</button>
           </div>
-        `;
+        ';
         
         document.body.appendChild(modal);
     }

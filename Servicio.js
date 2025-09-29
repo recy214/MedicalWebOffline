@@ -1,7 +1,4 @@
-// Servicio.js
-// Lógica para iniciar y cerrar servicio
-
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const startServiceBtn = document.getElementById('startServiceBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   let usuarioActual = null;
@@ -9,56 +6,43 @@ document.addEventListener('DOMContentLoaded', () => {
     usuarioActual = JSON.parse(localStorage.getItem('usuarioActual'));
   } catch (e) {}
 
-  // Estado del servicio
   let servicioActivo = false;
-  let servicioData = null;
-  // Verificar si hay servicio activo
-  try {
-    servicioData = JSON.parse(localStorage.getItem('servicioActual'));
-    if (servicioData && servicioData.salida === '') {
-      servicioActivo = true;
-    }
-  } catch (e) {}
 
-  function getFechaHora() {
-    const now = new Date();
-    return now.toLocaleString();
+  async function verificarServicioActivo() {
+    if (!usuarioActual) return;
+    const ultimoRegistro = await db.registrosES
+      .where('usuarioId')
+      .equals(usuarioActual.id)
+      .last();
+    
+    servicioActivo = ultimoRegistro && ultimoRegistro.tipo === 'entrada';
+    actualizarBoton();
   }
 
-  function iniciarServicio() {
+  function getFechaHora() {
+    return new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  async function iniciarServicio() {
     if (!usuarioActual) return;
-    const nuevoServicio = {
-      id: usuarioActual.id || '',
-      nombre: usuarioActual.nombre || '',
-      matricula: usuarioActual.matricula || '',
-      mesa: usuarioActual.mesa || '',
-      entrada: getFechaHora(),
-      salida: '',
-      rol: usuarioActual.rol || ''
-    };
-    localStorage.setItem('servicioActual', JSON.stringify(nuevoServicio));
+    await db.registrosES.add({
+      usuarioId: usuarioActual.id,
+      fecha: getFechaHora(),
+      tipo: 'entrada',
+      estadoSinc: 'pendiente'
+    });
     servicioActivo = true;
     actualizarBoton();
   }
 
-  function cerrarServicio() {
-    if (!servicioActivo) return;
-    let servicio = null;
-    try {
-      servicio = JSON.parse(localStorage.getItem('servicioActual'));
-    } catch (e) {}
-    if (servicio) {
-      servicio.salida = getFechaHora();
-      localStorage.setItem('servicioActual', JSON.stringify(servicio));
-      // Guardar en historial
-      let historial = [];
-      try {
-        historial = JSON.parse(localStorage.getItem('servicioHistorial')) || [];
-      } catch (e) {}
-      historial.push(servicio);
-      localStorage.setItem('servicioHistorial', JSON.stringify(historial));
-      localStorage.removeItem('servicioActual');
-    }
+  async function cerrarServicio() {
+    if (!servicioActivo || !usuarioActual) return;
+    await db.registrosES.add({
+      usuarioId: usuarioActual.id,
+      fecha: getFechaHora(),
+      tipo: 'salida',
+      estadoSinc: 'pendiente'
+    });
     servicioActivo = false;
     actualizarBoton();
   }
@@ -70,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (startServiceBtn) {
-    actualizarBoton();
+    verificarServicioActivo();
     startServiceBtn.onclick = function() {
       if (!servicioActivo) {
         iniciarServicio();
@@ -82,9 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (logoutBtn) {
     const originalLogout = logoutBtn.onclick;
-    logoutBtn.onclick = function() {
+    logoutBtn.onclick = async function() {
       if (servicioActivo) {
-        cerrarServicio();
+        await cerrarServicio();
       }
       if (typeof originalLogout === 'function') {
         originalLogout();

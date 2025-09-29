@@ -1,36 +1,30 @@
-// RegistroEntradasSalidas.js
-// Lógica para mostrar el historial de servicios en el modal
-
 document.addEventListener('DOMContentLoaded', () => {
-  // Botón de registro de entradas/salidas (quinto botón)
   const btnRegistroES = document.querySelector('.menu button:nth-child(5)');
   const modalRegistroES = document.getElementById('modalRegistroES');
   const cerrarRegistroES = document.getElementById('cerrarRegistroES');
   const registroESLista = document.getElementById('registroESLista');
 
   if (btnRegistroES && modalRegistroES && cerrarRegistroES && registroESLista) {
-    btnRegistroES.addEventListener('click', () => {
-      // Obtener historial de servicios
-      let historial = [];
-      try {
-        historial = JSON.parse(localStorage.getItem('servicioHistorial')) || [];
-      } catch (e) {}
-      // Renderizar lista
-      if (historial.length === 0) {
+    btnRegistroES.addEventListener('click', async () => {
+      const registros = await db.registrosES.toArray();
+      
+      if (registros.length === 0) {
         registroESLista.innerHTML = '<p>No hay registros de entradas/salidas.</p>';
       } else {
+        const usuarios = await db.usuarios.toArray();
+        const usuariosMap = new Map(usuarios.map(u => [u.id, u]));
+
         registroESLista.innerHTML = '<ul style="list-style:none; padding:0;">' +
-          historial.map((s, i) => `
+          registros.map(r => {
+            const usuario = usuariosMap.get(r.usuarioId);
+            return `
             <li style="margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-              <b>Nombre:</b> ${s.nombre || ''} <br>
-              <b>ID:</b> ${s.id || ''} <br>
-              <b>Matrícula:</b> ${s.matricula || ''} <br>
-              <b>Número de mesa:</b> ${s.mesa || ''} <br>
-              <b>Rol:</b> ${s.rol || ''} <br>
-              <b>Entrada:</b> ${s.entrada || ''} <br>
-              <b>Salida:</b> ${s.salida || ''} <br>
+              <b>Nombre:</b> ${usuario ? usuario.nombre : 'Usuario desconocido'} <br>
+              <b>ID de Usuario:</b> ${r.usuarioId || ''} <br>
+              <b>Fecha:</b> ${r.fecha || ''} <br>
+              <b>Tipo:</b> ${r.tipo || ''} <br>
             </li>
-          `).join('') + '</ul>';
+          `}).join('') + '</ul>';
       }
       modalRegistroES.style.display = 'flex';
     });
