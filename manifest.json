@@ -1,0 +1,21 @@
+{
+  "name": "Medical Developer PWA",
+  "short_name": "MedicalPWA",
+  "description": "Aplicación Web Progresiva para la gestión médica offline",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#fef3c7",
+  "theme_color": "#7dd3fc",
+  "icons": [
+    {
+      "src": "../MedicalWebOffline-DB-Offline-Sincronizaci-n/img/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "../MedicalWebOffline-DB-Offline-Sincronizaci-n/img/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
