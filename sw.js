@@ -1,3 +1,5 @@
+importScripts('https://cdn.jsdelivr.net/npm/dexie@3.2.2/dist/dexie.min.js');
+
 const CACHE_NAME = 'medical-pwa-cache-v1';
 const urlsToCache = [
   '/',
@@ -70,37 +72,48 @@ self.addEventListener('sync', event => {
 });
 
 async function syncPendingData() {
-  // This is a simulation. In a real app, you would fetch data from IndexedDB
-  // and send it to a backend server.
-  console.log('Attempting to sync pending data...');
+  const db = new Dexie('MedicalDB_v2');
+  db.version(1).stores({
+    usuarios: '++id, &matricula, rol',
+    pacientes: '++id, &matricula',
+    historialClinico: '++id, pacienteId, fecha, estadoSinc',
+    registrosES: '++id, [usuarioId+fecha], tipo, estadoSinc',
+    mesasOperacion: '++id, numero, estado'
+  });
 
-  // Simulate fetching data from IndexedDB
-  // For this simulation, we'll assume there's a global 'db' object available
-  // which would be the Dexie instance.
-  // In a real service worker, you'd need to open the IndexedDB directly.
-  // For now, we'll just log a message.
+  const pendingRegistrosES = await db.registrosES.where('estadoSinc').equals('pendiente').toArray();
+  const pendingHistorialClinico = await db.historialClinico.where('estadoSinc').equals('pendiente').toArray();
 
-  // Example of how you might interact with IndexedDB in a service worker:
-  // const db = new Dexie('MedicalDB_v2');
-  // db.version(1).stores({
-  //   registrosES: '++id, usuarioId, fecha, tipo, estadoSinc'
-  // });
-  // const pendingRecords = await db.registrosES.where('estadoSinc').equals('pendiente').toArray();
-  // if (pendingRecords.length > 0) {
-  //   console.log(`Found ${pendingRecords.length} pending records. Simulating sync...`);
-  //   // Simulate sending to server
-  //   await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate network delay
-  //   // Mark as synced
-  //   for (const record of pendingRecords) {
-  //     await db.registrosES.update(record.id, { estadoSinc: 'sincronizado' });
-  //   }
-  //   console.log('Simulated sync complete.');
-  // } else {
-  //   console.log('No pending records to sync.');
-  // }
-  
-  console.log('Simulating data synchronization. In a real application, data would be sent to a server.');
-  // Here you would typically open IndexedDB, get pending records,
-  // send them to your backend, and then mark them as synced.
-  // For this example, we're just logging.
+  const pendingRecords = [...pendingRegistrosES, ...pendingHistorialClinico];
+
+  if (pendingRecords.length > 0) {
+    try {
+      const response = await fetch('http://localhost:3000/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(pendingRecords)
+      });
+
+      if (response.ok) {
+        console.log('Sync successful');
+        const idsToUpdateES = pendingRegistrosES.map(rec => rec.id);
+        const idsToUpdateHC = pendingHistorialClinico.map(rec => rec.id);
+
+        if (idsToUpdateES.length > 0) {
+            await db.registrosES.where('id').anyOf(idsToUpdateES).modify({ estadoSinc: 'sincronizado' });
+        }
+        if (idsToUpdateHC.length > 0) {
+            await db.historialClinico.where('id').anyOf(idsToUpdateHC).modify({ estadoSinc: 'sincronizado' });
+        }
+      } else {
+        console.error('Sync failed:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error during sync:', error);
+    }
+  } else {
+    console.log('No pending records to sync.');
+  }
 }
