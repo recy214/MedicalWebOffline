@@ -98,80 +98,85 @@ export function initReporteController() {
   const seccionActividades = document.getElementById('actividades-section');
   const seccionExportacion = document.getElementById('exportacion-section');
   
-  // Función para cambiar de sección
-  function cambiarSeccion(seccionActiva) {
-    if (!seccionActiva) return;
+  // Función para cambiar de sección (más robusta)
+  // Usa selectores contenidos en .content-area para evitar afectar otros elementos
+  function cambiarSeccion(seccionId) {
+    if (!seccionId) return;
 
-    // Lista completa de secciones y botones
-    const secciones = [
-      { el: seccionEstadisticas, btn: btnEstadisticas },
-      { el: seccionActividades, btn: btnActividades },
-      { el: seccionExportacion, btn: btnExportacion }
-    ];
+    // Seleccionar exclusivamente las secciones hijas de .content-area
+    const secciones = Array.from(document.querySelectorAll('.content-area > .form-section'));
+    const botones = Array.from(document.querySelectorAll('.sidebar-menu button'));
 
-    // Primero ocultar y limpiar todas las secciones y quitar active de botones
-    secciones.forEach(item => {
-      if (!item.el) return;
+    // Ocultar todas las secciones y quitar clase active de los botones
+    secciones.forEach(s => {
       try {
-        item.el.classList.remove('active');
-        item.el.style.display = 'none';
-        // limpiar contenido para evitar mezcla
-        item.el.innerHTML = '';
+        s.classList.remove('active');
+        s.style.display = 'none';
+        // NO vaciamos innerHTML aquí para evitar reinyectar elementos que pertenecen a otras partes
       } catch (err) { /* noop */ }
-      if (item.btn) item.btn.classList.remove('active');
     });
+    botones.forEach(b => b.classList.remove('active'));
 
-    // Mostrar solo la sección activa
-    try {
-      seccionActiva.style.display = 'block';
-      seccionActiva.classList.add('active');
-    } catch (e) { /* noop */ }
-
-    // Activar el botón asociado (si existe)
-    const botonAsociado = secciones.find(s => s.el === seccionActiva);
-    if (botonAsociado && botonAsociado.btn) {
-      botonAsociado.btn.classList.add('active');
+    // Mostrar la sección destino (por id)
+    const seccionAMostrar = document.getElementById(seccionId);
+    if (seccionAMostrar) {
+      seccionAMostrar.style.display = 'block';
+      seccionAMostrar.classList.add('active');
+    } else {
+      console.warn('cambiarSeccion: no se encontró la sección con id', seccionId);
     }
+
+    // Activar el botón asociado según convenciones de id -> btnXXX
+    try {
+      if (seccionId === 'estadisticas-section' && btnEstadisticas) btnEstadisticas.classList.add('active');
+      if (seccionId === 'actividades-section' && btnActividades) btnActividades.classList.add('active');
+      if (seccionId === 'exportacion-section' && btnExportacion) btnExportacion.classList.add('active');
+    } catch (err) { /* noop */ }
 
     // Mostrar/ocultar la barra lateral dependiendo de la sección
     try {
       const sidebar = document.querySelector('.sidebar');
-      if (seccionActiva === seccionEstadisticas) {
-        // Ocultar todo el sidebar para ganar espacio
-        if (sidebar) sidebar.style.display = 'none';
-        // añadir clase al body para que el layout se adapte via CSS
+      // Ocultar la barra lateral cuando mostramos secciones que deben ocupar
+      // todo el área (estadísticas y registro de actividades). Mostrarla
+      // para la exportación u otras secciones.
+      if (seccionId === 'estadisticas-section' || seccionId === 'actividades-section' || seccionId === 'exportacion-section') {
+        // Ocultar todas las barras laterales que haya en el DOM (la del layout
+        // principal y la de la propia página de reportes) para garantizar que
+        // no se muestre el menú cuando queremos presentar solo la sección.
+        const sidebars = document.querySelectorAll('.sidebar');
+        sidebars.forEach(sb => { sb.style.display = 'none'; });
+        // Además ocultar el panel interno del layout si existe
+        const panels = document.querySelectorAll('.sidebar-panel');
+        panels.forEach(p => { p.style.display = 'none'; });
         try { document.body.classList.add('sidebar-hidden'); } catch(e) {}
       } else {
-        // Restaurar sidebar y botones
-        if (sidebar) sidebar.style.display = '';
+        const sidebars = document.querySelectorAll('.sidebar');
+        sidebars.forEach(sb => { sb.style.display = ''; });
+        const panels = document.querySelectorAll('.sidebar-panel');
+        panels.forEach(p => { p.style.display = ''; });
         try { document.body.classList.remove('sidebar-hidden'); } catch(e) {}
-        if (btnActividades) btnActividades.style.display = '';
-        if (btnExportacion) btnExportacion.style.display = '';
-        if (btnEstadisticas) btnEstadisticas.style.display = '';
       }
-    } catch (err) {
-      // noop
-    }
+    } catch (err) { /* noop */ }
   }
   
   // Configurar eventos de los botones
   if (btnEstadisticas) {
     btnEstadisticas.addEventListener('click', () => {
-      cambiarSeccion(seccionEstadisticas);
+      cambiarSeccion('estadisticas-section');
       renderEstadisticas();
     });
   }
   
   if (btnActividades) {
     btnActividades.addEventListener('click', () => {
-      cambiarSeccion(seccionActividades);
+      cambiarSeccion('actividades-section');
       renderActividades();
     });
   }
   
   if (btnExportacion) {
     btnExportacion.addEventListener('click', () => {
-      cambiarSeccion(seccionExportacion);
+      cambiarSeccion('exportacion-section');
       renderExportacion();
     });
   }
@@ -224,7 +229,7 @@ export function initReporteController() {
   // Si la URL no abrió ninguna sección específica, abrir Estadísticas por defecto
   if (!openedByUrl) {
     if (btnEstadisticas) {
-      cambiarSeccion(seccionEstadisticas);
+      cambiarSeccion('estadisticas-section');
       renderEstadisticas();
     }
   }

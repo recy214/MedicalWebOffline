@@ -15,9 +15,22 @@ export function renderEstadisticas(estadisticasPrevia = null, options = {}) {
   const section = document.getElementById('estadisticas-section');
   if (!section) return;
 
-  // Limpiar otras secciones para evitar contenido mezclado
-  try { document.getElementById('actividades-section').innerHTML = ''; } catch(e) {}
-  try { document.getElementById('exportacion-section').innerHTML = ''; } catch(e) {}
+  // Ocultar y desactivar otras secciones para evitar que se mezclen los contenidos
+  try {
+    const otras = ['actividades-section', 'exportacion-section'];
+    otras.forEach(id => {
+      const s = document.getElementById(id);
+      if (s) {
+        s.classList.remove('active');
+        s.style.display = 'none';
+        // limpiar contenido para liberar memoria y evitar restos
+        try { s.innerHTML = ''; } catch (e) { /* noop */ }
+      }
+    });
+  } catch (e) { /* noop */ }
+
+  // Asegurar que la sección actual está visible y marcada como activa
+  try { section.style.display = 'block'; section.classList.add('active'); } catch (e) { /* noop */ }
 
   // Mostrar versión compacta solo si se solicita explícitamente via options.compact
   const compactMode = options && options.compact === true;
@@ -205,9 +218,21 @@ export function renderActividades() {
   const section = document.getElementById('actividades-section');
   if (!section) return;
 
-  // Limpiar otras secciones para evitar contenido mezclado
-  try { document.getElementById('estadisticas-section').innerHTML = ''; } catch(e) {}
-  try { document.getElementById('exportacion-section').innerHTML = ''; } catch(e) {}
+  // Ocultar y desactivar otras secciones para evitar que se mezclen los contenidos
+  try {
+    const otras = ['estadisticas-section', 'exportacion-section'];
+    otras.forEach(id => {
+      const s = document.getElementById(id);
+      if (s) {
+        s.classList.remove('active');
+        s.style.display = 'none';
+        try { s.innerHTML = ''; } catch (e) { /* noop */ }
+      }
+    });
+  } catch (e) { /* noop */ }
+
+  // Asegurar que la sección actual está visible y marcada como activa
+  try { section.style.display = 'block'; section.classList.add('active'); } catch (e) { /* noop */ }
   
   // Obtener usuarios para el filtro
   const usuarios = authModel.getAllUsers();
@@ -310,85 +335,102 @@ export function renderExportacion() {
   const section = document.getElementById('exportacion-section');
   if (!section) return;
 
-  // Limpiar otras secciones para evitar contenido mezclado
-  try { document.getElementById('estadisticas-section').innerHTML = ''; } catch(e) {}
-  try { document.getElementById('actividades-section').innerHTML = ''; } catch(e) {}
+  // Ocultar y desactivar otras secciones para evitar que se mezclen los contenidos
+  try {
+    const otras = ['estadisticas-section', 'actividades-section'];
+    otras.forEach(id => {
+      const s = document.getElementById(id);
+      if (s) {
+        s.classList.remove('active');
+        s.style.display = 'none';
+        try { s.innerHTML = ''; } catch (e) { /* noop */ }
+      }
+    });
+  } catch (e) { /* noop */ }
+
+  // Asegurar que la sección actual está visible y marcada como activa
+  try { section.style.display = 'block'; section.classList.add('active'); } catch (e) { /* noop */ }
   
-  let html = `
-    <div class="section-header">
-      <h2>Exportación de Datos</h2>
-    </div>
-    
-    <div class="exportacion-container">
-      <div class="exportacion-card">
-        <div class="exportacion-icon">
-          <i class="fas fa-users"></i>
-        </div>
-        <div class="exportacion-info">
-          <h3>Pacientes</h3>
-          <p>Exporta la lista completa de pacientes registrados en el sistema.</p>
-        </div>
-        <button class="btn-exportar" data-tipo="pacientes">
-          <i class="fas fa-file-csv"></i> Exportar CSV
-        </button>
+  // Lazy-load: solo construir e inyectar el HTML la primera vez que se solicita
+  if (section.dataset.loaded !== 'true') {
+    const html = `
+      <div class="section-header">
+        <h2>Exportación de Datos</h2>
       </div>
       
-      <div class="exportacion-card">
-        <div class="exportacion-icon">
-          <i class="fas fa-calendar-check"></i>
+      <div class="exportacion-container">
+        <div class="exportacion-card">
+          <div class="exportacion-icon">
+            <i class="fas fa-users"></i>
+          </div>
+          <div class="exportacion-info">
+            <h3>Pacientes</h3>
+            <p>Exporta la lista completa de pacientes registrados en el sistema.</p>
+          </div>
+          <button class="btn-exportar" data-tipo="pacientes">
+            <i class="fas fa-file-csv"></i> Exportar CSV
+          </button>
         </div>
-        <div class="exportacion-info">
-          <h3>Citas</h3>
-          <p>Exporta todas las citas registradas con sus respectivos estados.</p>
-        </div>
-        <button class="btn-exportar" data-tipo="citas">
-          <i class="fas fa-file-csv"></i> Exportar CSV
-        </button>
-      </div>
-      
-      <div class="exportacion-card">
-        <div class="exportacion-icon">
-          <i class="fas fa-clipboard-list"></i>
-        </div>
-        <div class="exportacion-info">
-          <h3>Historial médico</h3>
-          <p>Exporta todos los registros del historial médico de los pacientes.</p>
-        </div>
-        <button class="btn-exportar" data-tipo="historial">
-          <i class="fas fa-file-csv"></i> Exportar CSV
-        </button>
-      </div>
-      
-      <div class="exportacion-card">
-        <div class="exportacion-icon">
-          <i class="fas fa-chart-line"></i>
-        </div>
-        <div class="exportacion-info">
-          <h3>Actividades</h3>
-          <p>Exporta el registro completo de actividades del sistema.</p>
-        </div>
-        <button class="btn-exportar" data-tipo="actividades">
-          <i class="fas fa-file-csv"></i> Exportar CSV
-        </button>
-      </div>
-    </div>
-  `;
-  
-  section.innerHTML = html;
-  
-  // Configurar eventos para los botones de exportación
-  const botonesExportar = document.querySelectorAll('.btn-exportar');
-  if (botonesExportar.length > 0) {
-    botonesExportar.forEach(boton => {
-      boton.addEventListener('click', () => {
-        const tipoExportacion = boton.getAttribute('data-tipo');
         
-        // Importar el controlador dinámicamente para evitar dependencias circulares
-        import('../controllers/reporteController.js').then(module => {
-          module.exportarDatosCSV(tipoExportacion);
+        <div class="exportacion-card">
+          <div class="exportacion-icon">
+            <i class="fas fa-calendar-check"></i>
+          </div>
+          <div class="exportacion-info">
+            <h3>Citas</h3>
+            <p>Exporta todas las citas registradas con sus respectivos estados.</p>
+          </div>
+          <button class="btn-exportar" data-tipo="citas">
+            <i class="fas fa-file-csv"></i> Exportar CSV
+          </button>
+        </div>
+        
+        <div class="exportacion-card">
+          <div class="exportacion-icon">
+            <i class="fas fa-clipboard-list"></i>
+          </div>
+          <div class="exportacion-info">
+            <h3>Historial médico</h3>
+            <p>Exporta todos los registros del historial médico de los pacientes.</p>
+          </div>
+          <button class="btn-exportar" data-tipo="historial">
+            <i class="fas fa-file-csv"></i> Exportar CSV
+          </button>
+        </div>
+        
+        <div class="exportacion-card">
+          <div class="exportacion-icon">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div class="exportacion-info">
+            <h3>Actividades</h3>
+            <p>Exporta el registro completo de actividades del sistema.</p>
+          </div>
+          <button class="btn-exportar" data-tipo="actividades">
+            <i class="fas fa-file-csv"></i> Exportar CSV
+          </button>
+        </div>
+      </div>
+    `;
+
+    section.innerHTML = html;
+
+    // Configurar eventos para los botones de exportación (solo la primera vez)
+    const botonesExportar = section.querySelectorAll('.btn-exportar');
+    if (botonesExportar.length > 0) {
+      botonesExportar.forEach(boton => {
+        boton.addEventListener('click', () => {
+          const tipoExportacion = boton.getAttribute('data-tipo');
+          // Importar el controlador dinámicamente para evitar dependencias circulares
+          import('../controllers/reporteController.js').then(module => {
+            module.exportarDatosCSV(tipoExportacion);
+          });
         });
       });
-    });
+    }
+
+    // Marcar como cargado para no volver a inyectar HTML innecesariamente
+    section.dataset.loaded = 'true';
   }
 }
 

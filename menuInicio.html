@@ -740,13 +740,16 @@
   </div>
 
   <!-- Modales -->
-  <div id="modalRegistroES" class="modal">
+  <!-- El modal global de registro de actividades se desactiva aquí para evitar
+       que sea accesible desde el menú principal. La pantalla de "Registro de
+       actividades" solo debe abrirse desde su botón en la página de Reportes. -->
+  <div id="modalRegistroES_inactive" class="modal" style="display:none; pointer-events:none;">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Registro de Actividad</h2>
-        <span id="cerrarRegistroES" class="modal-close">&times;</span>
+        <h2>Registro de Actividad (desactivado)</h2>
+        <span class="modal-close">&times;</span>
       </div>
-      <div id="registroESLista" class="modal-list"></div>
+      <div class="modal-list">Este modal está desactivado. Utilice la sección de Reportes → Registro de actividades.</div>
     </div>
   </div>
 

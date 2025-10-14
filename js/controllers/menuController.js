@@ -141,19 +141,24 @@ function setupActivityButtons() {
   // Activity button in user dropdown
   const viewActivityBtn = document.getElementById('verActividadBtn');
   if (viewActivityBtn) {
+    // Redirigir a la página de reportes y abrir la sección de actividades.
+    // Hacemos esto para que el registro de actividades esté únicamente accesible
+    // desde su botón correspondiente en la página de Reportes.
     viewActivityBtn.addEventListener('click', () => {
-      renderActivityLog('registroESLista');
-      document.getElementById('modalRegistroES').style.display = 'flex';
-      document.getElementById('userDropdown').style.display = 'none';
+      // Cerrar dropdown si existe
+      const userDropdown = document.getElementById('userDropdown');
+      if (userDropdown) userDropdown.style.display = 'none';
+      // Abrir la página de reportes en la sección de actividades
+      window.location.href = 'pages/categoria-reportes.html?section=actividades';
     });
   }
 
   // Activity button in main interface
   const activityLogBtn = document.getElementById('btnRegistroES');
   if (activityLogBtn) {
+    // Redirigir a la página de reportes en lugar de abrir el modal global.
     activityLogBtn.addEventListener('click', () => {
-      renderActivityLog('registroESLista');
-      document.getElementById('modalRegistroES').style.display = 'flex';
+      window.location.href = 'pages/categoria-reportes.html?section=actividades';
     });
   }
   
@@ -161,7 +166,9 @@ function setupActivityButtons() {
   const closeActivityBtn = document.getElementById('cerrarRegistroES');
   if (closeActivityBtn) {
     closeActivityBtn.addEventListener('click', () => {
-      document.getElementById('modalRegistroES').style.display = 'none';
+      const modal = document.getElementById('modalRegistroES');
+      if (modal) modal.style.display = 'none';
+      // If modal not present (was deactivated), do nothing
     });
   }
 }

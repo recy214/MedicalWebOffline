@@ -83,6 +83,19 @@ function setupSidebarNavigation() {
                 activeSection.classList.add('active');
             }
 
+            // Ocultar la barra lateral de la página de gestión cuando se
+            // muestre una sección que debe ocupar todo el espacio (modulos/grupos)
+            try {
+                const sidebars = document.querySelectorAll('.sidebar');
+                if (sectionId === 'modulos' || sectionId === 'grupos') {
+                    sidebars.forEach(sb => { sb.style.display = 'none'; });
+                    try { document.body.classList.add('sidebar-hidden'); } catch(e) {}
+                } else {
+                    sidebars.forEach(sb => { sb.style.display = ''; });
+                    try { document.body.classList.remove('sidebar-hidden'); } catch(e) {}
+                }
+            } catch (err) { /* noop */ }
+
             if (sectionId === 'modulos') {
                 renderGestionModulos(document.getElementById('modulos-section'));
             } else if (sectionId === 'grupos') {
