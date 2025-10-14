@@ -731,11 +731,11 @@
           <div class="user-role" id="dropdownUserRole"></div>
         </div>
         <button class="dropdown-item" id="profileBtn">
-          <i class="fas fa-user" style="margin-right: 8px;"></i>
+          <i class="fas fa-user icon-gap"></i>
           Ver perfil
         </button>
         <button class="dropdown-item logout" id="logoutBtn">
-          <i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>
+          <i class="fas fa-sign-out-alt icon-gap"></i>
           Cerrar sesión
         </button>
       </div>
@@ -870,8 +870,8 @@
               <div class="form-row">
                 <div class="form-group col-md-6">
                   <label for="facultad">Facultad:</label>
-                  <div style="display: flex; gap: 10px; align-items: center;">
-                    <select id="facultad" name="facultad" required style="flex: 1;">
+                  <div class="flex-gap-20">
+                    <select id="facultad" name="facultad" required class="full-flex">
                       <option value="">Seleccione una facultad</option>
                     </select>
                     <button type="button" class="btn-icon" onclick="mostrarModalNuevaFacultad()" title="Agregar nueva facultad">
@@ -881,8 +881,8 @@
                 </div>
                 <div class="form-group col-md-6">
                   <label for="carrera">Carrera:</label>
-                  <div style="display: flex; gap: 10px; align-items: center;">
-                    <select id="carrera" name="carrera" required disabled style="flex: 1;">
+                  <div class="flex-gap-20">
+                    <select id="carrera" name="carrera" required disabled class="full-flex">
                       <option value="">Seleccione una carrera</option>
                     </select>
                     <button type="button" class="btn-icon" onclick="mostrarModalNuevaCarrera()" title="Agregar nueva carrera" id="btnAgregarCarrera" disabled>
@@ -914,7 +914,7 @@
 
         <!-- Modales para agregar facultades y carreras -->
         <!-- Modal para nueva facultad -->
-        <div id="modalNuevaFacultad" class="modal" style="display: none;">
+  <div id="modalNuevaFacultad" class="modal hidden">
           <div class="modal-content">
             <div class="modal-header">
               <h3>Agregar Nueva Facultad</h3>
@@ -936,7 +936,7 @@
         </div>
 
         <!-- Modal para nueva carrera -->
-        <div id="modalNuevaCarrera" class="modal" style="display: none;">
+  <div id="modalNuevaCarrera" class="modal hidden">
           <div class="modal-content">
             <div class="modal-header">
               <h3>Agregar Nueva Carrera</h3>
@@ -964,7 +964,7 @@
         </div>
 
         <!-- Modal para ver detalles del paciente -->
-        <div id="modalVerPaciente" class="modal" style="display: none;">
+  <div id="modalVerPaciente" class="modal hidden">
           <div class="modal-content modal-large">
             <div class="modal-header">
               <h3 id="modalTituloPaciente">Pablo Daniel</h3>
@@ -1076,7 +1076,7 @@
         </div>
 
         <!-- Modal para editar paciente -->
-        <div id="modalEditarPaciente" class="modal" style="display: none;">
+  <div id="modalEditarPaciente" class="modal hidden">
           <div class="modal-content modal-large">
             <div class="modal-header">
               <h3>Editar Paciente</h3>
@@ -1181,7 +1181,7 @@
         <div id="message-container" class="message-container"></div>
 
         <!-- Modal de confirmación personalizado -->
-        <div id="modalConfirmacion" class="modal" style="display: none;">
+  <div id="modalConfirmacion" class="modal hidden">
           <div class="modal-content modal-confirm">
             <div class="modal-header modal-confirm-header">
               <div class="confirm-icon" id="confirmIcon">⚠️</div>

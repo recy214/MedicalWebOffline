@@ -210,6 +210,16 @@ header .icon { position: absolute; top: 20px; right: 20px; font-size: 20px; curs
 .pending-alert { background: #fef3c7; padding: 15px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #f59e0b; }
 .badge-inline { margin-right: 8px; }
 .badge-blue { background: #3b82f6; color: white; }
+/* Small utility to replace inline icon margin-right used across templates */
+.icon-gap { margin-right: 8px; }
+
+/* Representar un modal marcado como inactivo (sin pointer events y oculto visualmente) */
+.inactive-modal { display: none; pointer-events: none; }
+/* Utilidad para forzar que un control ocupe el espacio disponible en un contenedor flex */
+.full-flex { flex: 1 !important; width: 100%; }
+
+/* Utilidad para contenedores flex con gap y alineado centrado */
+.flex-gap-20 { display: flex; gap: 10px; align-items: center; }
 
 /* Badges específicos */
 .career-badge { 

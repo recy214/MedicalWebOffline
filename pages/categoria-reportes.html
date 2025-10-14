@@ -158,6 +158,7 @@
     .sidebar {
       width: 280px;
       background: rgba(255, 255, 255, 0.95);
+      -webkit-backdrop-filter: blur(10px);
       backdrop-filter: blur(10px);
       border-right: 1px solid rgba(125, 211, 252, 0.3);
       padding: 20px;
@@ -216,6 +217,7 @@
 
     .content-area {
       background: rgba(255, 255, 255, 0.95);
+      -webkit-backdrop-filter: blur(10px);
       backdrop-filter: blur(10px);
       border-radius: 20px;
       padding: 30px;
@@ -407,11 +409,11 @@
           <div class="user-role" id="dropdownUserRole"></div>
         </div>
         <button class="dropdown-item" id="profileBtn">
-          <i class="fas fa-user" style="margin-right: 8px;"></i>
+          <i class="fas fa-user icon-gap"></i>
           Ver perfil
         </button>
         <button class="dropdown-item logout" id="logoutBtn">
-          <i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>
+          <i class="fas fa-sign-out-alt icon-gap"></i>
           Cerrar sesión
         </button>
       </div>
