@@ -329,7 +329,7 @@ export function renderExportacion() {
           <p>Exporta la lista completa de pacientes registrados en el sistema.</p>
         </div>
         <button class="btn-exportar" data-tipo="pacientes">
-          <i class="fas fa-file-csv"></i> Exportar CSV
+          <i class="fas fa-file-pdf"></i> Exportar PDF
         </button>
       </div>
       
@@ -342,7 +342,7 @@ export function renderExportacion() {
           <p>Exporta todas las citas registradas con sus respectivos estados.</p>
         </div>
         <button class="btn-exportar" data-tipo="citas">
-          <i class="fas fa-file-csv"></i> Exportar CSV
+          <i class="fas fa-file-pdf"></i> Exportar PDF
         </button>
       </div>
       
@@ -355,7 +355,7 @@ export function renderExportacion() {
           <p>Exporta todos los registros del historial médico de los pacientes.</p>
         </div>
         <button class="btn-exportar" data-tipo="historial">
-          <i class="fas fa-file-csv"></i> Exportar CSV
+          <i class="fas fa-file-pdf"></i> Exportar PDF
         </button>
       </div>
       
@@ -368,7 +368,7 @@ export function renderExportacion() {
           <p>Exporta el registro completo de actividades del sistema.</p>
         </div>
         <button class="btn-exportar" data-tipo="actividades">
-          <i class="fas fa-file-csv"></i> Exportar CSV
+          <i class="fas fa-file-pdf"></i> Exportar PDF
         </button>
       </div>
     </div>

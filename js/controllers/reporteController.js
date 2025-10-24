@@ -239,10 +239,131 @@ export function initReporteController() {
 // Funciones para manejar la exportación de datos
 export function exportarDatosCSV(tipoExportacion) {
   try {
+    // Manejo especial para "historial": pedimos al usuario elegir un paciente para exportar individualmente
+    if (tipoExportacion === 'historial') {
+      // Crear modal simple para seleccionar paciente
+      const pacientes = pacienteModel.getPacientes();
+      if (!pacientes || pacientes.length === 0) {
+        mostrarConfirmacion('Error', 'No hay pacientes registrados para exportar historial.');
+        return;
+      }
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);z-index:9999';
+      modal.innerHTML = `
+        <div style="background:#fff;padding:20px;border-radius:8px;min-width:320px;max-width:520px">
+          <h3 style="margin-top:0">Exportar historial por paciente</h3>
+          <p>Seleccione el paciente cuyo historial desea exportar:</p>
+          <select id="_selectPacienteExport" style="width:100%;padding:8px;margin:8px 0">
+            ${pacientes.map(p => `<option value="${p.id}">${p.nombre} ${p.apellidos || ''} — ${p.matricula || ''}</option>`).join('')}
+          </select>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button id="_cancelExportHist" style="padding:8px 12px">Cancelar</button>
+            <button id="_okExportHist" style="padding:8px 12px;background:#06b6d4;border:none;color:#fff;border-radius:4px">Exportar</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      const cancelBtn = modal.querySelector('#_cancelExportHist');
+      const okBtn = modal.querySelector('#_okExportHist');
+      const select = modal.querySelector('#_selectPacienteExport');
+
+      cancelBtn.addEventListener('click', () => { document.body.removeChild(modal); });
+
+      okBtn.addEventListener('click', () => {
+        const pacienteId = select.value;
+        const paciente = pacienteModel.getPaciente(pacienteId);
+
+        // Obtener registros del historial centralizado
+        const historialRegistros = reporteModel.getReporteHistorialMedico({ pacienteId });
+
+        // Construir series de parámetros a partir de historialCambios y datosMedicos actuales
+        const parametrosSeries = {
+          temperatura: [],
+          peso: [],
+          talla: [],
+          frecuenciaRespiratoria: [],
+          presion_sistolica: [],
+          presion_diastolica: []
+        };
+
+        // Incluir registro inicial (datos actuales del paciente si existen)
+        if (paciente) {
+          // Si el paciente tiene historialCambios (array de actualizaciones), recorrerlo
+          const cambios = paciente.historialCambios || [];
+
+          cambios.forEach(cambio => {
+            const fecha = cambio.fecha || cambio.datos?.fechaRegistroMedico || null;
+            const datos = cambio.datos || {};
+            if (datos.temperatura) parametrosSeries.temperatura.push({ fecha, valor: parseFloat(datos.temperatura) });
+            if (datos.peso) parametrosSeries.peso.push({ fecha, valor: parseFloat(datos.peso) });
+            if (datos.talla) parametrosSeries.talla.push({ fecha, valor: parseFloat(datos.talla) });
+            if (datos.frecuenciaRespiratoria) parametrosSeries.frecuenciaRespiratoria.push({ fecha, valor: parseFloat(datos.frecuenciaRespiratoria) });
+            if (datos.presion) {
+              // intentar parsear "120/80"
+              const m = String(datos.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+              if (m) {
+                parametrosSeries.presion_sistolica.push({ fecha, valor: parseInt(m[1]) });
+                parametrosSeries.presion_diastolica.push({ fecha, valor: parseInt(m[2]) });
+              }
+            }
+          });
+
+          // Agregar el estado actual de datosMedicos si existe
+          const dm = paciente.datosMedicos || null;
+          if (dm && dm.fechaRegistroMedico) {
+            const fecha = dm.fechaRegistroMedico;
+            if (dm.temperatura) parametrosSeries.temperatura.push({ fecha, valor: parseFloat(dm.temperatura) });
+            if (dm.peso) parametrosSeries.peso.push({ fecha, valor: parseFloat(dm.peso) });
+            if (dm.talla) parametrosSeries.talla.push({ fecha, valor: parseFloat(dm.talla) });
+            if (dm.frecuenciaRespiratoria) parametrosSeries.frecuenciaRespiratoria.push({ fecha, valor: parseFloat(dm.frecuenciaRespiratoria) });
+            if (dm.presion) {
+              const m = String(dm.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+              if (m) {
+                parametrosSeries.presion_sistolica.push({ fecha, valor: parseInt(m[1]) });
+                parametrosSeries.presion_diastolica.push({ fecha, valor: parseInt(m[2]) });
+              }
+            }
+          }
+        }
+
+        // Ordenar series por fecha
+        Object.keys(parametrosSeries).forEach(k => {
+          parametrosSeries[k].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+        });
+
+        // Observaciones: tomar notas del historial central y campos 'notas' o 'descripcion'
+        const observaciones = (historialRegistros || []).map(r => ({ fecha: r.fecha, texto: r.notas || r.descripcion || r.tipo || '' })).filter(o => o.texto && o.texto !== '');
+
+        const datosParaExport = {
+          paciente: paciente || { id: pacienteId },
+          parametrosSeries,
+          observaciones,
+          historial: historialRegistros
+        };
+
+        const nombreArchivo = `historial_${paciente ? (paciente.matricula || pacienteId) : pacienteId}`;
+
+        const resultado = reporteModel.exportarPDF(datosParaExport, nombreArchivo);
+        if (resultado && resultado.success) {
+          mostrarConfirmacion('Éxito', `Historial del paciente preparado para exportación.`);
+          authModel.registrarActividad({ accion: 'exportar', descripcion: `Exportación historial paciente: ${pacienteId}` });
+        } else {
+          mostrarConfirmacion('Error', resultado ? resultado.message : 'Error al preparar exportación.');
+        }
+
+        document.body.removeChild(modal);
+      });
+
+      return;
+    }
+
+    // Para los demás tipos exportamos todo a PDF (sin fallback a CSV)
     let datos = [];
     let nombreArchivo = '';
-    
-    // Obtener los datos según el tipo de exportación
+
     switch (tipoExportacion) {
       case 'pacientes':
         datos = reporteModel.getReportePacientes();
@@ -263,20 +384,41 @@ export function exportarDatosCSV(tipoExportacion) {
       default:
         throw new Error('Tipo de exportación no válido');
     }
-    
-    const resultado = reporteModel.exportarCSV(datos, nombreArchivo);
-    
-    if (resultado.success) {
-      mostrarConfirmacion('Éxito', `Los datos de ${tipoExportacion} han sido exportados correctamente.`);
-      
-      // Registrar la actividad de exportación
-      authModel.registrarActividad({
-        accion: 'exportar',
-        descripcion: `Exportación de datos: ${tipoExportacion}`
+
+    if (tipoExportacion === 'actividades') {
+      // Para actividades mantenemos un formato simple (sin encabezado/pie especial solicitado)
+      // Construimos una tabla imprimible aquí
+      let html = `<!doctype html><html><head><meta charset="utf-8"><title>${nombreArchivo}</title>`;
+      html += `<style>body{font-family:Arial,Helvetica,sans-serif;padding:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f3f4f6}</style>`;
+      html += `</head><body><h2>Actividades</h2><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Descripción</th></tr></thead><tbody>`;
+      datos.forEach(act => {
+        const fecha = new Date(act.fecha).toLocaleString('es-MX');
+        html += `<tr><td>${fecha}</td><td>${act.usuario}</td><td>${act.accion}</td><td>${act.descripcion}</td></tr>`;
       });
-    } else {
-      mostrarConfirmacion('Error', resultado.message);
+      html += `</tbody></table></body></html>`;
+
+      const newWin = window.open('', '_blank');
+      if (!newWin) {
+        mostrarConfirmacion('Error', 'No se pudo abrir la ventana de impresión. Desactive el bloqueador de ventanas emergentes.');
+        return;
+      }
+      newWin.document.open(); newWin.document.write(html); newWin.document.close();
+      setTimeout(() => { try { newWin.focus(); newWin.print(); } catch (e) {} }, 500);
+
+      authModel.registrarActividad({ accion: 'exportar', descripcion: `Exportación de actividades` });
+      mostrarConfirmacion('Éxito', 'Registro de actividades preparado para impresión/PDF.');
+      return;
     }
+
+    // Pacientes y citas
+    const resultado = reporteModel.exportarPDF(datos, nombreArchivo);
+    if (resultado && resultado.success) {
+      mostrarConfirmacion('Éxito', `Los datos de ${tipoExportacion} han sido preparados para exportación.`);
+      authModel.registrarActividad({ accion: 'exportar', descripcion: `Exportación de datos: ${tipoExportacion}` });
+    } else {
+      mostrarConfirmacion('Error', resultado ? resultado.message : 'Error al preparar exportación.');
+    }
+
   } catch (error) {
     mostrarConfirmacion('Error', `Error al exportar los datos: ${error.message}`);
   }
@@ -340,14 +482,29 @@ export function filtrarActividades(filtros) {
     
     contenedorResultados.innerHTML = html;
     
-    // Configurar botón de exportación de resultados
+    // Configurar botón de exportación de resultados (exportar solo los resultados filtrados)
     const btnExportarResultados = document.getElementById('btnExportarResultados');
     if (btnExportarResultados) {
       btnExportarResultados.addEventListener('click', () => {
-        const resultado = reporteModel.exportarCSV(actividades, 'actividades_filtradas');
-        if (resultado.success) {
-          mostrarConfirmacion('Éxito', 'Los resultados filtrados han sido exportados correctamente.');
+        // Generar una vista imprimible con los resultados actualmente filtrados
+        let html = `<!doctype html><html><head><meta charset="utf-8"><title>actividades_filtradas</title>`;
+        html += `<style>body{font-family:Arial,Helvetica,sans-serif;padding:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f3f4f6}</style>`;
+        html += `</head><body><h2>Actividades - Resultados Filtrados</h2><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Descripción</th></tr></thead><tbody>`;
+        actividades.forEach(act => {
+          const fecha = new Date(act.fecha).toLocaleString('es-MX');
+          html += `<tr><td>${fecha}</td><td>${act.usuario}</td><td>${act.accion}</td><td>${act.descripcion}</td></tr>`;
+        });
+        html += `</tbody></table></body></html>`;
+
+        const newWin = window.open('', '_blank');
+        if (!newWin) {
+          mostrarConfirmacion('Error', 'No se pudo abrir la ventana de impresión. Desactive el bloqueador de ventanas emergentes.');
+          return;
         }
+        newWin.document.open(); newWin.document.write(html); newWin.document.close();
+        setTimeout(() => { try { newWin.focus(); newWin.print(); } catch (e) {} }, 500);
+
+        mostrarConfirmacion('Éxito', 'Los resultados filtrados han sido preparados para impresión/PDF.');
       });
     }
     
