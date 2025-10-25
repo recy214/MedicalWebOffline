@@ -334,13 +334,63 @@ export function exportarDatosCSV(tipoExportacion) {
           parametrosSeries[k].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
         });
 
-        // Observaciones: tomar notas del historial central y campos 'notas' o 'descripcion'
-        const observaciones = (historialRegistros || []).map(r => ({ fecha: r.fecha, texto: r.notas || r.descripcion || r.tipo || '' })).filter(o => o.texto && o.texto !== '');
+        // Construir observaciones agrupadas y sin duplicados: examenVista, examenOido, general
+        const grouped = { examenVista: [], examenOido: [], general: [] };
+        const seen = { examenVista: new Set(), examenOido: new Set(), general: new Set() };
+
+        // General: tomar notas del historial central (notas/descripcion/tipo)
+        (historialRegistros || []).forEach(r => {
+          const texto = String(r.notas || r.descripcion || r.tipo || '').trim();
+          if (texto && !seen.general.has(texto)) {
+            grouped.general.push({ fecha: r.fecha, texto });
+            seen.general.add(texto);
+          }
+        });
+
+        // Incluir observaciones específicas de los exámenes desde historialCambios y datosMedicos
+        try {
+          const cambios = (paciente && paciente.historialCambios) ? paciente.historialCambios : [];
+          cambios.forEach(cambio => {
+            const fecha = cambio.fecha || cambio.datos?.fechaRegistroMedico || null;
+            const datos = cambio.datos || {};
+            if (datos.examenVista && String(datos.examenVista).trim() !== '') {
+              const t = String(datos.examenVista).trim();
+              if (!seen.examenVista.has(t)) { grouped.examenVista.push({ fecha, texto: t }); seen.examenVista.add(t); }
+            }
+            if (datos.examenOido && String(datos.examenOido).trim() !== '') {
+              const t = String(datos.examenOido).trim();
+              if (!seen.examenOido.has(t)) { grouped.examenOido.push({ fecha, texto: t }); seen.examenOido.add(t); }
+            }
+          });
+
+          if (paciente && paciente.datosMedicos) {
+            const dm = paciente.datosMedicos;
+            const fechaDM = dm.fechaRegistroMedico || null;
+            if (dm.examenVista && String(dm.examenVista).trim() !== '') {
+              const t = String(dm.examenVista).trim();
+              if (!seen.examenVista.has(t)) { grouped.examenVista.push({ fecha: fechaDM, texto: t }); seen.examenVista.add(t); }
+            }
+            if (dm.examenOido && String(dm.examenOido).trim() !== '') {
+              const t = String(dm.examenOido).trim();
+              if (!seen.examenOido.has(t)) { grouped.examenOido.push({ fecha: fechaDM, texto: t }); seen.examenOido.add(t); }
+            }
+          }
+        } catch (e) {
+          // noop
+        }
+
+        // Evitar duplicados: si un texto aparece como examen, quitarlo de general
+        grouped.general = grouped.general.filter(item => {
+          const t = item.texto.trim();
+          if (seen.examenVista.has(t) || seen.examenOido.has(t)) return false;
+          return true;
+        });
 
         const datosParaExport = {
           paciente: paciente || { id: pacienteId },
           parametrosSeries,
-          observaciones,
+          // Observaciones agrupadas: { examenVista:[], examenOido:[], general:[] }
+          observaciones: grouped,
           historial: historialRegistros
         };
 

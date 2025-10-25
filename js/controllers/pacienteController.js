@@ -326,6 +326,8 @@ function handleDatosMedicosSubmit(event) {
     frecuenciaRespiratoria: frecuenciaRespiratoria || null,
     examenVista: examenVista || null,
     examenOido: examenOido || null,
+    // Guardar observaciones libres del practicante si las hay
+    observaciones: formData.get('observaciones')?.trim() || null,
     usuarioMedico: usuarioActual.nombre,
     fechaRegistroMedico: new Date().toISOString()
   };
@@ -352,9 +354,15 @@ function handleDatosMedicosSubmit(event) {
           peso: datosMedicos.peso,
           talla: datosMedicos.talla,
           frecuenciaRespiratoria: datosMedicos.frecuenciaRespiratoria,
+          // Añadir observaciones de examen de vista / oído al registro central
+          examenVista: datosMedicos.examenVista || undefined,
+          examenOido: datosMedicos.examenOido || undefined,
           usuarioRegistro: usuarioActual.nombre,
-          fecha: new Date().toISOString()
-        };      pacienteModel.addRegistroHistorial(registroHistorial);
+          fecha: new Date().toISOString(),
+          // Incluir observaciones en el registro de historial para que se muestren en los reportes/PDF
+          notas: datosMedicos.observaciones || undefined
+        };
+        pacienteModel.addRegistroHistorial(registroHistorial);
       
       // Mostrar mensaje de éxito detallado
         const datosGuardados = Object.entries(datosMedicos)
@@ -1430,6 +1438,8 @@ function handleEditarPacienteSubmit(event) {
     frecuenciaRespiratoria: formData.get('frecuenciaRespiratoria') || null,
     examenVista: formData.get('examenVista') || null,
     examenOido: formData.get('examenOido') || null,
+    // Observaciones opcionales del practicante/usuario
+    observaciones: formData.get('observaciones')?.trim() || null,
     usuarioMedico: usuarioActual.nombre,
     fechaRegistroMedico: new Date().toISOString()
   };
@@ -1446,11 +1456,14 @@ function handleEditarPacienteSubmit(event) {
         pacienteModel.updateDatosMedicos(pacienteId, datosMedicos);
         
         // Agregar al historial
+        // Si el formulario incluyó observaciones, usarlas como descripción/notas del historial
+        const descripcionObs = formData.get('observaciones')?.trim();
         const registroHistorial = {
           pacienteId: pacienteId,
           tipo: 'Paciente Editado',
-          descripcion: 'Datos personales y médicos actualizados',
-          fecha: new Date().toISOString()
+          descripcion: descripcionObs || 'Datos personales y médicos actualizados',
+          fecha: new Date().toISOString(),
+          notas: descripcionObs || undefined
         };
         pacienteModel.addRegistroHistorial(registroHistorial);
       }

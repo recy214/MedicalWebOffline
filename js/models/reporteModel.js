@@ -342,16 +342,61 @@ export const reporteModel = {
         // Observaciones del personal médico
         html += `<div style="margin-top:12px"><h3>Observaciones del personal médico</h3>`;
         const obs = fila.observaciones || [];
-        if (obs.length === 0) {
-          html += `<div class="muted-text">No hay observaciones registradas.</div>`;
-        } else {
-          html += `<ul class="record-list">`;
-          obs.forEach(o => {
-            const f = o.fecha ? new Date(o.fecha).toLocaleString() : '';
-            html += `<li><strong>${f}</strong> — ${String(o.texto)}</li>`;
+
+        // Helper to render a list of observations
+        function renderObsList(arr) {
+          let out = '';
+          out += `<ul class="record-list">`;
+          arr.forEach(o => {
+            const f = o && o.fecha ? new Date(o.fecha).toLocaleString() : '';
+            out += `<li><strong>${f}</strong> — ${String(o.texto)}</li>`;
           });
-          html += `</ul>`;
+          out += `</ul>`;
+          return out;
         }
+
+        // If obs is an array (legacy), render as before
+        if (Array.isArray(obs)) {
+          if (obs.length === 0) {
+            html += `<div class="muted-text">No hay observaciones registradas.</div>`;
+          } else {
+            html += renderObsList(obs);
+          }
+        } else if (typeof obs === 'object' && obs !== null) {
+          // Expecting grouped object: { examenVista: [], examenOido: [], general: [] }
+          const gv = obs;
+          const hasVista = gv.examenVista && gv.examenVista.length;
+          const hasOido = gv.examenOido && gv.examenOido.length;
+          const hasGen = gv.general && gv.general.length;
+
+          if (!hasVista && !hasOido && !hasGen) {
+            html += `<div class="muted-text">No hay observaciones registradas.</div>`;
+          } else {
+            // Examen de Oído
+            if (hasOido) {
+              html += `<div style="margin-top:8px"><h4>Examen de Oído</h4>`;
+              html += renderObsList(gv.examenOido);
+              html += `</div>`;
+            }
+
+            // Examen de Vista
+            if (hasVista) {
+              html += `<div style="margin-top:8px"><h4>Examen de Vista</h4>`;
+              html += renderObsList(gv.examenVista);
+              html += `</div>`;
+            }
+
+            // Observaciones generales
+            if (hasGen) {
+              html += `<div style="margin-top:8px"><h4>Observación General</h4>`;
+              html += renderObsList(gv.general);
+              html += `</div>`;
+            }
+          }
+        } else {
+          html += `<div class="muted-text">No hay observaciones registradas.</div>`;
+        }
+
         html += `</div>`;
 
         // Historial: listado cronológico si existe
