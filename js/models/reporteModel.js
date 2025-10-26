@@ -335,8 +335,8 @@ export const reporteModel = {
         html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' })}</div></div>`;
         // frecuencia respiratoria
         html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' })}</div></div>`;
-        // presión sistólica/diastólica
-        html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Sistólica</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
+  // presión sistólica/diastólica
+  html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Arterial (Sistólica)</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
         html += `</div>`;
 
         // Observaciones del personal médico
@@ -495,7 +495,7 @@ export const reporteModel = {
         html += `<div style="margin:8px 0"><strong>Peso (kg)</strong><div>${generarSVGSerie(ps.peso || [], { width:520, height:120, stroke: '#10b981' })}</div></div>`;
         html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' })}</div></div>`;
         html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' })}</div></div>`;
-        html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Sistólica</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
+  html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Arterial (Sistólica)</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
         html += `</div>`;
 
         // Observaciones desde historial central

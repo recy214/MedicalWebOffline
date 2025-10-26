@@ -2,6 +2,7 @@
 import { reporteModel } from '../models/reporteModel.js';
 import { pacienteModel } from '../models/pacienteModel.js';
 import { authModel } from '../models/storageModel.js';
+import eventBus, { EVENT_NAMES } from '../utils/eventBus.js';
 
 // Función para formatear fechas
 function formatearFecha(fecha) {
@@ -269,7 +270,6 @@ export function renderActividades() {
     </div>
     
     <div class="resultados-container" id="resultadosActividades">
-      <!-- Aquí se mostrarán los resultados de la búsqueda -->
       <div class="alert-info">
         Selecciona los filtros y haz clic en "Filtrar" para ver el registro de actividades.
       </div>
@@ -928,187 +928,121 @@ function loadChartJS() {
 
   // Genera gráficas de línea para cada paciente con los campos: peso, IMC, glucosa, presión arterial y frecuencia respiratoria.
 export async function generarGraficasPorPaciente(containerId = 'contenedorEstadisticas') {
-  // Insertar estilos genéricos si no existen
   insertarEstilosGraficos();
 
   const contenedor = document.getElementById(containerId);
   if (!contenedor) return;
 
   // Cargar Chart.js
-  try {
-    await loadChartJS();
-  } catch (err) {
-    contenedor.insertAdjacentHTML('beforeend', `<div class="alert-info">No se pudo cargar la librería de gráficas (Chart.js).</div>`);
-    console.error(err);
-    return;
-  }
+  try { await loadChartJS(); } catch (err) { contenedor.insertAdjacentHTML('beforeend', `<div class="alert-info">No se pudo cargar la librería de gráficas (Chart.js).</div>`); console.error(err); return; }
 
-  // Obtener pacientes desde el modelo
   const pacientes = pacienteModel.getPacientes();
   if (!pacientes || pacientes.length === 0) {
-    contenedor.insertAdjacentHTML('beforeend', '<div class="alert-info">No hay pacientes para generar gráficas.</div>');
+    contenedor.innerHTML = '<div class="alert-info">No hay pacientes para generar gráficas.</div>';
     return;
   }
-  // Limpiar sección de posibles gráficas previas
-  // Si ya existe el wrapper, reutilizarlo (y limpiarlo)
+
+  // Reusar o crear wrapper
   let wrapper = document.querySelector('.pacientes-charts-wrapper');
-  if (wrapper && contenedor.contains(wrapper)) {
-    wrapper.innerHTML = '';
-  } else {
-    wrapper = document.createElement('div');
-    wrapper.className = 'pacientes-charts-wrapper';
-    contenedor.appendChild(wrapper);
-  }
+  if (wrapper && contenedor.contains(wrapper)) wrapper.innerHTML = '';
+  else { wrapper = document.createElement('div'); wrapper.className = 'pacientes-charts-wrapper'; contenedor.appendChild(wrapper); }
+
+  // Función helper para crear tarjetas de parámetro
+  const createParamCard = (paciente, paramKey, title, labels, values) => {
+    const validCount = values.filter(v => typeof v === 'number' && !isNaN(v)).length;
+    const card = document.createElement('div');
+    card.className = 'patient-param-card';
+    card.innerHTML = `
+      <div class="param-card-header"><strong>${title}</strong></div>
+      <div class="param-card-body" id="param-body-${paciente.id}-${paramKey}"></div>
+    `;
+
+    const body = card.querySelector(`#param-body-${paciente.id}-${paramKey}`);
+    if (validCount < 2) {
+      body.innerHTML = '<div class="alert-info">Información insuficiente para la generación de la gráfica</div>';
+      return card;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `chart-${paciente.id}-${paramKey}`;
+    canvas.width = 600;
+    canvas.height = 220;
+    body.appendChild(canvas);
+
+    try {
+      const ctx = canvas.getContext('2d');
+      // eslint-disable-next-line no-undef
+      new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: [{ label: title, data: values, borderColor: '#06b6d4', backgroundColor: 'transparent', spanGaps: true, tension: 0.2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { display: true, beginAtZero: false } } }
+      });
+    } catch (e) {
+      console.error('Error creando gráfico param', paramKey, e);
+      body.innerHTML = '<div class="alert-info">Error generando la gráfica</div>';
+    }
+
+    return card;
+  };
 
   pacientes.forEach(paciente => {
-    // Recolectar series temporales: historialCambios + registro inicial + registro actual
+    // Recolectar puntos cronológicos
     const puntos = [];
-
-    // Si existe historialCambios, agregar cada uno
-    if (Array.isArray(paciente.historialCambios)) {
-      paciente.historialCambios.forEach(h => {
-        const fecha = h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null;
-        puntos.push({ fecha, datos: h.datos || h });
-      });
-    }
-
-    // Añadir registro inicial si existe
-    if (paciente.fechaRegistroInicial && paciente.datosMedicos) {
-      puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
-    }
-
-    // Asegurar incluir datos médicos actuales si no están en historial
+    if (Array.isArray(paciente.historialCambios)) paciente.historialCambios.forEach(h => puntos.push({ fecha: h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null, datos: h.datos || h }));
+    if (paciente.fechaRegistroInicial && paciente.datosMedicos) puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
     if (paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico) {
       const existe = puntos.some(p => p.fecha === paciente.datosMedicos.fechaRegistroMedico);
       if (!existe) puntos.push({ fecha: paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
     }
 
-    // Ordenar por fecha
     puntos.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
 
-    // Preparar arrays para cada métrica
-    const labels = [];
-  const seriesPeso = [];
-  const seriesIMC = [];
-  const seriesPresion = [];
-  const seriesGlucosa = [];
-  const seriesFrecuencia = [];
+    const labels = puntos.map(pt => pt.fecha ? new Date(pt.fecha).toLocaleDateString('es-ES') : 'Sin fecha');
 
-    puntos.forEach(pt => {
-      const fecha = pt.fecha ? new Date(pt.fecha) : null;
-      labels.push(fecha ? fecha.toLocaleDateString('es-ES') : 'Sin fecha');
-      const d = pt.datos || {};
+    // Construir series por parámetro
+    const seriesPeso = puntos.map(pt => { const d = pt.datos||{}; const val = d.peso ? parseFloat(d.peso) : null; return isFinite(val) ? val : null; });
+    const seriesIMC = puntos.map(pt => { const d = pt.datos||{}; const peso = d.peso ? parseFloat(d.peso) : null; const talla = d.talla ? parseFloat(d.talla) : null; const imc = (peso && talla) ? parseFloat((peso / Math.pow((talla/100),2)).toFixed(1)) : null; return imc !== null ? imc : null; });
+  const seriesPresion = puntos.map(pt => { const d = pt.datos||{}; if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) { const parts = d.presion.split('/').map(s=>parseInt(s.trim(),10)); return Number.isFinite(parts[0]) ? parts[0] : null; } if (d.presion && !isNaN(parseFloat(d.presion))) return parseFloat(d.presion); return null; });
+  const seriesGlucosa = puntos.map(pt => { const d = pt.datos||{}; const g = d.glucosa ? parseFloat(d.glucosa) : null; return isFinite(g) ? g : null; });
+  const seriesFrecuencia = puntos.map(pt => { const d = pt.datos||{}; const f = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null; return isFinite(f) ? f : null; });
 
-      // Peso
-      const peso = d.peso ? parseFloat(d.peso) : null;
-      seriesPeso.push(isFinite(peso) ? peso : null);
-
-      // Talla en m para IMC
-      const talla = d.talla ? parseFloat(d.talla) : null;
-      const imc = (peso && talla) ? parseFloat((peso / Math.pow((talla/100), 2)).toFixed(1)) : null;
-      seriesIMC.push(imc !== null ? imc : null);
-
-      // Presión arterial: la aplicación guarda presión como 'sistólica/diastólica' (ej: "120/80").
-      // Para respetar el campo 'presión arterial' usamos el valor sistólico como representante numérico
-      // (si deseas otra estrategia podemos usar promedio o el valor diastólico).
-      let presionVal = null;
-      if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) {
-        const parts = d.presion.split('/').map(s => parseInt(s.trim(), 10));
-        presionVal = Number.isFinite(parts[0]) ? parts[0] : null;
-      } else if (d.presion && !isNaN(parseFloat(d.presion))) {
-        // Si por alguna razón la presión se guardó como número (sistólica), usarlo
-        presionVal = parseFloat(d.presion);
-      }
-      seriesPresion.push(presionVal);
-
-      // Glucosa (puede no estar presente) - buscar en el objeto si existe
-      const glucosa = d.glucosa ? parseFloat(d.glucosa) : null;
-      seriesGlucosa.push(isFinite(glucosa) ? glucosa : null);
-
-      // Frecuencia respiratoria
-      const freq = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null;
-      seriesFrecuencia.push(isFinite(freq) ? freq : null);
-    });
-
-    // Crear tarjeta por paciente
-    const card = document.createElement('div');
-    card.className = 'patient-chart-card';
-    card.innerHTML = `
+    // Crear tarjeta principal por paciente y añadir sub-cards por parámetro
+    const pacienteCard = document.createElement('div');
+    pacienteCard.className = 'patient-chart-card';
+    pacienteCard.innerHTML = `
       <div class="patient-chart-header">
         <div class="patient-title"><strong>${paciente.nombre} ${paciente.apellidos || ''}</strong> • ${paciente.matricula}</div>
         <div class="patient-meta">Última actualización: ${paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico ? new Date(paciente.datosMedicos.fechaRegistroMedico).toLocaleString('es-ES') : 'Sin datos'}</div>
       </div>
-      <div class="patient-chart-body">
-        <canvas id="chart-paciente-${paciente.id}" width="600" height="250"></canvas>
-      </div>
+      <div class="patient-params-grid" id="patient-params-${paciente.id}"></div>
     `;
 
-    wrapper.appendChild(card);
+    wrapper.appendChild(pacienteCard);
 
-    // Construir datasets solo con series que contengan al menos un número válido
-    const datasets = [];
-    const colorFor = (i) => ['#06b6d4','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316'][i % 6];
+    const paramsGrid = pacienteCard.querySelector(`#patient-params-${paciente.id}`);
+    paramsGrid.style.display = 'grid';
+    paramsGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(260px, 1fr))';
+    paramsGrid.style.gap = '12px';
 
-    if (seriesPeso.some(v => v !== null)) {
-      datasets.push({ label: 'Peso (kg)', data: seriesPeso, borderColor: colorFor(0), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-    }
-    if (seriesIMC.some(v => v !== null)) {
-      datasets.push({ label: 'IMC', data: seriesIMC, borderColor: colorFor(1), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-    }
-    if (seriesPresion.some(v => v !== null)) {
-      datasets.push({ label: 'Presión Arterial (mmHg)', data: seriesPresion, borderColor: colorFor(2), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-    }
-    if (seriesGlucosa.some(v => v !== null)) {
-      datasets.push({ label: 'Glucosa (mg/dL)', data: seriesGlucosa, borderColor: colorFor(4), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-    }
-    if (seriesFrecuencia.some(v => v !== null)) {
-      datasets.push({ label: 'Frecuencia Respiratoria (rpm)', data: seriesFrecuencia, borderColor: colorFor(5), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-    }
-
-    // Si no hay datasets, mostrar mensaje dentro de la card
-    if (datasets.length === 0) {
-      const canvas = card.querySelector('canvas');
-      canvas.parentElement.innerHTML = '<div class="alert-info">No hay datos médicos registrados para este paciente.</div>';
-      return;
-    }
-
-    // Crear gráfico
-    try {
-      const ctx = document.getElementById(`chart-paciente-${paciente.id}`).getContext('2d');
-      // eslint-disable-next-line no-undef
-      new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top' },
-            tooltip: { mode: 'index', intersect: false }
-          },
-          interaction: { mode: 'nearest', axis: 'x', intersect: false },
-          scales: {
-            x: { display: true, title: { display: false } },
-            y: { display: true, beginAtZero: false }
-          }
-        }
-      });
-    } catch (e) {
-      console.error('Error creando la gráfica para paciente', paciente.id, e);
-    }
+  paramsGrid.appendChild(createParamCard(paciente, 'peso', 'Peso (kg)', labels, seriesPeso));
+  paramsGrid.appendChild(createParamCard(paciente, 'imc', 'IMC', labels, seriesIMC));
+  paramsGrid.appendChild(createParamCard(paciente, 'presion', 'Presión Arterial', labels, seriesPresion));
+  paramsGrid.appendChild(createParamCard(paciente, 'glucosa', 'Glucosa (mg/dL)', labels, seriesGlucosa));
+  paramsGrid.appendChild(createParamCard(paciente, 'frecuencia', 'Frecuencia Respiratoria (rpm)', labels, seriesFrecuencia));
   });
 
-  // Estilos básicos para las cards de paciente (si no existen)
+  // Estilos ligeros para las sub-cards
   if (!document.getElementById('patient-charts-styles')) {
-    const s = document.createElement('style');
-    s.id = 'patient-charts-styles';
+    const s = document.createElement('style'); s.id = 'patient-charts-styles';
     s.innerHTML = `
       .pacientes-charts-wrapper { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; margin-top: 20px; }
       .patient-chart-card { background: white; border-radius: 10px; padding: 12px; border: 1px solid #e6eef2; box-shadow: 0 6px 18px rgba(2,6,23,0.04); }
       .patient-chart-header { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
       .patient-title { font-size: 1rem; color: #0f172a; }
       .patient-meta { font-size: 0.8rem; color: #6b7280; }
-      .patient-chart-body { height: 240px; }
+      .patient-param-card { background: #fff; border-radius: 8px; padding:10px; border:1px solid #eef2f6; min-height: 140px; }
+      .param-card-header { font-weight:700; margin-bottom:8px; }
+      .param-card-body { height: 160px; }
     `;
     document.head.appendChild(s);
   }
@@ -1120,25 +1054,49 @@ export function renderPatientListAndSelector(containerId = 'contenedorEstadistic
   if (!contenedor) return;
 
   // Preparar panel: contenedor principal dividido en lista + area de gráficos
-  // Si ya existe un layout previo, limpiarlo
+  // Si ya existe un layout previo, limpiarlo. Asegurarse además de envolverlo
+  // dentro de un contenedor `.estadisticas-seccion` para mantener la consistencia
+  // con las demás secciones de estadísticas.
   let layout = document.querySelector('.estadisticas-patient-layout');
+  let sectionWrapper = null;
+
   if (layout && contenedor.contains(layout)) {
+    // Si el layout ya existe en DOM, comprobar si está envuelto por una sección
+    if (!layout.parentElement || !layout.parentElement.classList.contains('estadisticas-seccion')) {
+      // Crear wrapper y mover el layout dentro
+      sectionWrapper = document.createElement('div');
+      sectionWrapper.className = 'estadisticas-seccion';
+      sectionWrapper.innerHTML = '<h3>Gráficas de pacientes</h3>';
+      // Reemplazar el layout existente por el wrapper y anidar el layout dentro
+      contenedor.replaceChild(sectionWrapper, layout);
+      sectionWrapper.appendChild(layout);
+    } else {
+      sectionWrapper = layout.parentElement;
+    }
+
     // mantener el layout pero limpiar la lista y las gráficas
     const listPanel = layout.querySelector('.patient-list-panel');
     const chartsPanel = layout.querySelector('.patient-charts-panel');
     if (listPanel) listPanel.innerHTML = '';
     if (chartsPanel) chartsPanel.innerHTML = '';
   } else {
+    // Crear nuevo layout y wrapper (sección)
     layout = document.createElement('div');
     layout.className = 'estadisticas-patient-layout';
     layout.innerHTML = `
       <div class="patient-list-panel"></div>
       <div class="patient-charts-panel" id="patient-charts-panel">
-        <h3 class="patient-charts-title">Graficas Individuales</h3>
+        <h3 class="patient-charts-title">Gráficas individuales</h3>
       </div>
     `;
-    // Insertar layout al final del contenedor para que aparezca después de las secciones previas (p.ej. "Citas por Estado")
-    contenedor.appendChild(layout);
+
+    sectionWrapper = document.createElement('div');
+    sectionWrapper.className = 'estadisticas-seccion';
+    sectionWrapper.innerHTML = '<h3>Gráficas Individuales</h3>';
+    sectionWrapper.appendChild(layout);
+
+    // Insertar wrapper al final del contenedor para que aparezca después de las secciones previas
+    contenedor.appendChild(sectionWrapper);
   }
 
   const listPanel = layout.querySelector('.patient-list-panel');
@@ -1187,7 +1145,15 @@ export function renderPatientListAndSelector(containerId = 'contenedorEstadistic
       .estadisticas-patient-layout { display: flex; gap: 18px; margin-bottom: 18px; }
       .patient-list-panel { width: 260px; background: #fff; border-radius: 8px; padding: 10px; border: 1px solid #e6eef2; height: 380px; overflow: auto; }
   .patient-charts-panel { flex: 1; }
-  .patient-charts-title { margin: 0 0 12px 6px; font-size: 1.1rem; color: #0f172a; font-weight: 700; }
+  .patient-charts-title { 
+    margin: 0 0 12px 6px; 
+    font-size: 1.1rem; 
+    color: #0f172a; 
+    font-weight: 700;
+    padding-bottom: 8px; /* Añadido: Espacio debajo del título */
+    border-bottom: 2px solid #06b6d4; /* Añadido: Separador azul */
+    display: block;
+  }
       .patient-search-input { width: 100%; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e5e7eb; }
       .patient-list-ul { list-style: none; padding: 0; margin:0; }
       .patient-list-item { padding: 10px 8px; border-radius: 6px; cursor: pointer; color: #0f172a; margin-bottom: 6px; }
@@ -1238,108 +1204,92 @@ export function renderPatientListAndSelector(containerId = 'contenedorEstadistic
 
 // Renderiza únicamente la gráfica de un paciente dado en el containerId
 export async function renderSinglePacienteChart(pacienteId, containerId = 'contenedorEstadisticas') {
+  insertarEstilosGraficos();
   const contenedor = document.getElementById(containerId);
   if (!contenedor) return;
 
-  // Cargar Chart.js si es necesario
   try { await loadChartJS(); } catch (e) { console.error(e); contenedor.innerHTML = '<div class="alert-info">No se pudo cargar Chart.js</div>'; return; }
 
   const paciente = pacienteModel.getPaciente(pacienteId);
-  if (!paciente) {
-    contenedor.innerHTML = '<div class="alert-info">Paciente no encontrado</div>';
-    return;
-  }
+  if (!paciente) { contenedor.innerHTML = '<div class="alert-info">Paciente no encontrado</div>'; return; }
 
-  // Limpiar contenedor
   contenedor.innerHTML = '';
 
-  // Reutilizar parte de la lógica de generación: crear arrays de puntos
+  // Recolectar puntos cronológicos
   const puntos = [];
-  if (Array.isArray(paciente.historialCambios)) {
-    paciente.historialCambios.forEach(h => puntos.push({ fecha: h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null, datos: h.datos || h }));
-  }
-  if (paciente.fechaRegistroInicial && paciente.datosMedicos) {
-    puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
-  }
+  if (Array.isArray(paciente.historialCambios)) paciente.historialCambios.forEach(h => puntos.push({ fecha: h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null, datos: h.datos || h }));
+  if (paciente.fechaRegistroInicial && paciente.datosMedicos) puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
   if (paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico) {
     const existe = puntos.some(p => p.fecha === paciente.datosMedicos.fechaRegistroMedico);
     if (!existe) puntos.push({ fecha: paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
   }
-  puntos.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+  puntos.sort((a,b)=>new Date(a.fecha||0)-new Date(b.fecha||0));
 
-  const labels = [];
-  const seriesPeso = [];
-  const seriesIMC = [];
-  const seriesPresion = [];
-  const seriesGlucosa = [];
-  const seriesFrecuencia = [];
+  const labels = puntos.map(pt => pt.fecha ? new Date(pt.fecha).toLocaleDateString('es-ES') : 'Sin fecha');
+  const seriesPeso = puntos.map(pt => { const d=pt.datos||{}; const v = d.peso ? parseFloat(d.peso) : null; return isFinite(v)?v:null; });
+  const seriesIMC  = puntos.map(pt => { const d=pt.datos||{}; const p = d.peso?parseFloat(d.peso):null; const t = d.talla?parseFloat(d.talla):null; const imc = (p && t) ? parseFloat((p/Math.pow((t/100),2)).toFixed(1)) : null; return imc!==null?imc:null; });
+  const seriesPresion = puntos.map(pt => { const d=pt.datos||{}; if (d.presion && typeof d.presion==='string' && d.presion.includes('/')){ const parts=d.presion.split('/').map(s=>parseInt(s.trim(),10)); return Number.isFinite(parts[0])?parts[0]:null; } if (d.presion && !isNaN(parseFloat(d.presion))) return parseFloat(d.presion); return null; });
+  const seriesGlucosa = puntos.map(pt => { const d=pt.datos||{}; const g = d.glucosa?parseFloat(d.glucosa):null; return isFinite(g)?g:null; });
+  const seriesFrecuencia = puntos.map(pt => { const d = pt.datos||{}; const f = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null; return isFinite(f) ? f : null; });
 
-  puntos.forEach(pt => {
-    const fecha = pt.fecha ? new Date(pt.fecha) : null;
-    labels.push(fecha ? fecha.toLocaleDateString('es-ES') : 'Sin fecha');
-    const d = pt.datos || {};
-    const peso = d.peso ? parseFloat(d.peso) : null;
-    seriesPeso.push(isFinite(peso) ? peso : null);
-    const talla = d.talla ? parseFloat(d.talla) : null;
-    const imc = (peso && talla) ? parseFloat((peso / Math.pow((talla/100), 2)).toFixed(1)) : null;
-    seriesIMC.push(imc !== null ? imc : null);
-    let presionVal = null;
-    if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) {
-      const parts = d.presion.split('/').map(s => parseInt(s.trim(), 10));
-      presionVal = Number.isFinite(parts[0]) ? parts[0] : null;
-    } else if (d.presion && !isNaN(parseFloat(d.presion))) {
-      presionVal = parseFloat(d.presion);
-    }
-    seriesPresion.push(presionVal);
-    const gluc = d.glucosa ? parseFloat(d.glucosa) : null;
-    seriesGlucosa.push(isFinite(gluc) ? gluc : null);
-    const freq = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null;
-    seriesFrecuencia.push(isFinite(freq) ? freq : null);
-  });
-
-  const datasets = [];
-  const colorFor = (i) => ['#06b6d4','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316'][i % 6];
-  if (seriesPeso.some(v => v !== null)) datasets.push({ label: 'Peso (kg)', data: seriesPeso, borderColor: colorFor(0), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-  if (seriesIMC.some(v => v !== null)) datasets.push({ label: 'IMC', data: seriesIMC, borderColor: colorFor(1), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-  if (seriesPresion.some(v => v !== null)) datasets.push({ label: 'Presión Arterial (mmHg)', data: seriesPresion, borderColor: colorFor(2), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-  if (seriesGlucosa.some(v => v !== null)) datasets.push({ label: 'Glucosa (mg/dL)', data: seriesGlucosa, borderColor: colorFor(4), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-  if (seriesFrecuencia.some(v => v !== null)) datasets.push({ label: 'Frecuencia Respiratoria (rpm)', data: seriesFrecuencia, borderColor: colorFor(5), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
-
-  const card = document.createElement('div');
-  card.className = 'patient-chart-card';
+  // Crear contenedor de paciente
+  const card = document.createElement('div'); card.className='patient-chart-card';
   card.innerHTML = `
     <div class="patient-chart-header">
       <div class="patient-title"><strong>${paciente.nombre} ${paciente.apellidos || ''}</strong> • ${paciente.matricula}</div>
       <div class="patient-meta">Última actualización: ${paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico ? new Date(paciente.datosMedicos.fechaRegistroMedico).toLocaleString('es-ES') : 'Sin datos'}</div>
     </div>
-    <div class="patient-chart-body">
-      <canvas id="chart-paciente-single-${paciente.id}" width="800" height="300"></canvas>
-    </div>
+    <div class="patient-params-grid" id="patient-params-single-${paciente.id}"></div>
   `;
-
   contenedor.appendChild(card);
 
-  if (datasets.length === 0) {
-    const canvas = card.querySelector('canvas');
-    canvas.parentElement.innerHTML = '<div class="alert-info">No hay datos médicos registrados para este paciente.</div>';
-    return;
-  }
+  const grid = card.querySelector(`#patient-params-single-${paciente.id}`);
+  grid.style.display='grid'; grid.style.gridTemplateColumns='repeat(auto-fit,minmax(260px,1fr))'; grid.style.gap='12px';
 
-  try {
-    const ctx = document.getElementById(`chart-paciente-single-${paciente.id}`).getContext('2d');
-    // eslint-disable-next-line no-undef
-    new Chart(ctx, {
-      type: 'line',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
-        interaction: { mode: 'nearest', axis: 'x', intersect: false },
-        scales: { x: { display: true }, y: { display: true, beginAtZero: false } }
-      }
-    });
-  } catch (e) {
-    console.error('Error creando la gráfica para paciente', paciente.id, e);
-  }
+  const createParam = (key,title,values)=>{
+    const valid = values.filter(v=>typeof v==='number' && !isNaN(v)).length;
+    const wrapper = document.createElement('div'); wrapper.className='patient-param-card';
+    wrapper.innerHTML = `<div class="param-card-header">${title}</div><div class="param-card-body"></div>`;
+    const body = wrapper.querySelector('.param-card-body');
+    if (valid < 2) { body.innerHTML = '<div class="alert-info">Información insuficiente para la generación de la gráfica</div>'; return wrapper; }
+    const canvas = document.createElement('canvas'); canvas.id=`chart-single-${paciente.id}-${key}`; canvas.width=700; canvas.height=220; body.appendChild(canvas);
+    try { const ctx = canvas.getContext('2d'); new Chart(ctx,{ type:'line', data:{ labels, datasets:[{ label:title, data:values, borderColor:'#06b6d4', backgroundColor:'transparent', spanGaps:true, tension:0.2 }]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:true}, y:{display:true}} } }); } catch(e){ console.error(e); body.innerHTML = '<div class="alert-info">Error generando la gráfica</div>'; }
+    return wrapper;
+  };
+
+  grid.appendChild(createParam('peso','Peso (kg)', seriesPeso));
+  grid.appendChild(createParam('imc','IMC', seriesIMC));
+  grid.appendChild(createParam('presion','Presión Arterial', seriesPresion));
+  grid.appendChild(createParam('glucosa','Glucosa (mg/dL)', seriesGlucosa));
+  grid.appendChild(createParam('frecuencia','Frecuencia Respiratoria (rpm)', seriesFrecuencia));
+}
+
+// Suscribirse a eventos de paciente para actualizar gráficas automáticamente
+try {
+  eventBus.on(EVENT_NAMES.PACIENTE_UPDATED, (payload) => {
+    const panel = document.getElementById('patient-charts-panel');
+    if (!panel) return;
+    // Determinar paciente seleccionado actualmente
+    const active = document.querySelector('.patient-list-item.active');
+    const selectedId = active ? active.dataset.id : null;
+    if (selectedId === 'ALL' || !selectedId) {
+      generarGraficasPorPaciente('patient-charts-panel');
+    } else {
+      renderSinglePacienteChart(selectedId, 'patient-charts-panel');
+    }
+  });
+
+  eventBus.on(EVENT_NAMES.PACIENTE_CREATED, () => {
+    const panel = document.getElementById('patient-charts-panel');
+    if (!panel) return;
+    generarGraficasPorPaciente('patient-charts-panel');
+  });
+
+  eventBus.on(EVENT_NAMES.PACIENTE_DELETED, () => {
+    const panel = document.getElementById('patient-charts-panel');
+    if (!panel) return;
+    generarGraficasPorPaciente('patient-charts-panel');
+  });
+} catch (e) {
+  console.warn('No se pudo suscribir al EventBus para actualizaciones de pacientes', e);
 }

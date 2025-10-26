@@ -2,6 +2,7 @@
 
 import { pacienteModel } from '../models/pacienteModel.js';
 import { renderPacienteForm } from '../views/pacienteView.js';
+import eventBus, { EVENT_NAMES } from '../utils/eventBus.js';
 
 export function initPacienteController() {
   console.log('🚀 Controlador de Pacientes inicializado');
@@ -253,6 +254,10 @@ function handleDatosMedicosSubmit(event) {
     } else if (temp < 36.0 || temp > 37.5) {
       advertencias.push(`Temperatura: ${temperatura}°C fuera del rango normal (36.0-37.5°C)`);
     }
+    if (pacienteGuardado) {
+      // Emitir evento para notificar otras vistas
+      try { eventBus.emit(EVENT_NAMES.PACIENTE_CREATED, pacienteGuardado); } catch (e) { /* no bloquear */ }
+    }
   }
   
   // Validar presión arterial
@@ -265,7 +270,7 @@ function handleDatosMedicosSubmit(event) {
       const sistolica = parseInt(match[1]);
       const diastolica = parseInt(match[2]);
       if (sistolica < 70 || sistolica > 200) {
-        errores.push(`Presión sistólica: ${sistolica} está fuera del rango válido (70-200 mmHg)`);
+        errores.push(`Presión arterial: ${sistolica} está fuera del rango válido (70-200 mmHg)`);
       } else if (diastolica < 40 || diastolica > 120) {
         errores.push(`Presión diastólica: ${diastolica} está fuera del rango válido (40-120 mmHg)`);
       } else if (sistolica < 90 || sistolica > 140 || diastolica < 60 || diastolica > 90) {
@@ -409,6 +414,8 @@ function handleDatosMedicosSubmit(event) {
       renderPacientesList();
       renderDatosMedicosForm();
       renderHistorialCompleto();
+      // Emitir evento de paciente actualizado para que otras vistas (gráficas) se sincronicen
+      try { eventBus.emit(EVENT_NAMES.PACIENTE_UPDATED, pacienteActualizado); } catch (e) { /* no bloquear */ }
     } else {
       mostrarMensaje('error', '❌ Error al Guardar', 'No se pudieron guardar los datos médicos. Intenta nuevamente.');
     }
@@ -1181,6 +1188,8 @@ function eliminarPacienteConfirmado(pacienteId, paciente, tieneDatosMedicos, his
       renderPacientesList();
       renderDatosMedicosForm();
       renderHistorialCompleto();
+  // Notificar a otros módulos que el paciente fue eliminado
+  try { eventBus.emit(EVENT_NAMES.PACIENTE_DELETED, pacienteId); } catch (e) { }
       
     } else {
       mostrarMensaje('error', '❌ Error al Eliminar', 'No se pudo eliminar el paciente. Intenta nuevamente.');
@@ -1472,11 +1481,13 @@ function handleEditarPacienteSubmit(event) {
       mostrarMensaje('success', '✅ Paciente Actualizado', 
         `Los datos de ${datosPersonales.nombre} ${datosPersonales.apellidos || ''} han sido actualizados exitosamente.\n\nActualizado por: ${usuarioActual.nombre}`, 5000);
       
-      // Cerrar modal y actualizar vistas
-      cerrarModalEditarPaciente();
-      renderPacientesList();
-      renderDatosMedicosForm();
-      renderHistorialCompleto();
+  // Cerrar modal y actualizar vistas
+  cerrarModalEditarPaciente();
+  renderPacientesList();
+  renderDatosMedicosForm();
+  renderHistorialCompleto();
+  // Notificar a otros módulos que el paciente fue actualizado
+  try { eventBus.emit(EVENT_NAMES.PACIENTE_UPDATED, pacienteId); } catch (e) { }
       
     } else {
       mostrarMensaje('error', '❌ Error al Actualizar', 'No se pudo actualizar el paciente. Verifica los datos e intenta nuevamente.');
