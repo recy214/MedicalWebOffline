@@ -208,6 +208,13 @@ export function renderEstadisticas(estadisticasPrevia = null, options = {}) {
     // Caída segura: intentar generar todas las gráficas
     generarGraficasPorPaciente().catch(e => console.error('Error generando gráficas por paciente:', e));
   }
+
+  // Generar sección de gráficas globales (obesidad por IMC y presión alta por semana)
+  try {
+    generarGraficasGlobales('contenedorEstadisticas');
+  } catch (e) {
+    console.warn('No se pudieron generar las gráficas globales:', e);
+  }
 }
 
 // Renderiza la sección de actividades
@@ -1295,6 +1302,189 @@ try {
       renderSinglePacienteChart(selectedId, 'patient-charts-panel');
     }
   });
+
+  // Refrescar siempre las gráficas globales al cambiar datos de pacientes
+  eventBus.on(EVENT_NAMES.PACIENTE_UPDATED, () => {
+    try { generarGraficasGlobales('contenedorEstadisticas'); } catch (e) { /* noop */ }
+  });
+  eventBus.on(EVENT_NAMES.PACIENTE_CREATED, () => {
+    try { generarGraficasGlobales('contenedorEstadisticas'); } catch (e) { /* noop */ }
+  });
+  eventBus.on(EVENT_NAMES.PACIENTE_DELETED, () => {
+    try { generarGraficasGlobales('contenedorEstadisticas'); } catch (e) { /* noop */ }
+  });
 } catch (e) {
   console.warn('No se pudo suscribir al EventBus para actualizaciones de pacientes', e);
+}
+
+// Generar gráficas globales: series semanales de conteos
+export async function generarGraficasGlobales(containerId = 'contenedorEstadisticas', options = {}) {
+  insertarEstilosGraficos();
+  const contenedor = document.getElementById(containerId);
+  if (!contenedor) return;
+
+  // Cargar Chart.js
+  try { await loadChartJS(); } catch (err) { contenedor.insertAdjacentHTML('beforeend', `<div class="alert-info">No se pudo cargar la librería de gráficas (Chart.js).</div>`); console.error(err); return; }
+
+  const pacientes = pacienteModel.getPacientes();
+  if (!pacientes || pacientes.length === 0) {
+    // Si no hay pacientes, limpiar la sección si existe
+    const existing = contenedor.querySelector('#global-charts-section');
+    if (existing) existing.innerHTML = '<div class="alert-info">No hay pacientes para generar las gráficas globales.</div>';
+    return;
+  }
+
+  // Helpers de fecha: obtener inicio de semana (lunes) en formato YYYY-MM-DD
+  const getWeekStartISO = (dateLike) => {
+    const d = new Date(dateLike);
+    if (isNaN(d)) return null;
+    const day = d.getDay(); // 0 (Dom) .. 6 (Sab)
+    const diff = (day + 6) % 7; // 0->Lun, ...
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - diff);
+    monday.setHours(0,0,0,0);
+    return monday.toISOString().split('T')[0];
+  };
+
+  const addWeeksISO = (isoDateStr, weeks) => {
+    const d = new Date(isoDateStr + 'T00:00:00');
+    d.setDate(d.getDate() + weeks * 7);
+    d.setHours(0,0,0,0);
+    return d.toISOString().split('T')[0];
+  };
+
+  // Parámetros y umbrales (por defecto)
+  const mapThreshold = typeof options.mapThreshold === 'number' ? options.mapThreshold : 95; // MAP >= 95 considerada alta (ajustable)
+  const imcThreshold = typeof options.imcThreshold === 'number' ? options.imcThreshold : 30; // IMC >= 30 obesidad
+
+  // Mapas semana -> Set(de pacientes)
+  const semanaObesos = {}; // weekISO -> Set(ids)
+  const semanaPresionAlta = {}; // weekISO -> Set(ids)
+
+  // Recorrer pacientes y sus puntos médicos
+  pacientes.forEach(paciente => {
+    const puntos = [];
+    if (Array.isArray(paciente.historialCambios)) paciente.historialCambios.forEach(h => puntos.push({ fecha: h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null, datos: h.datos || h }));
+    if (paciente.fechaRegistroInicial && paciente.datosMedicos) puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+    if (paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico) {
+      const existe = puntos.some(p => p.fecha === paciente.datosMedicos.fechaRegistroMedico);
+      if (!existe) puntos.push({ fecha: paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+    }
+
+    puntos.forEach(pt => {
+      const fecha = pt.fecha ? new Date(pt.fecha) : null;
+      if (!fecha || isNaN(fecha)) return;
+      const week = getWeekStartISO(fecha);
+      if (!week) return;
+
+      const d = pt.datos || {};
+      // IMC
+      const peso = d.peso ? parseFloat(d.peso) : null;
+      const talla = d.talla ? parseFloat(d.talla) : null;
+      const imc = (peso && talla) ? (peso / Math.pow((talla/100),2)) : null;
+      if (imc !== null && !isNaN(imc) && imc >= imcThreshold) {
+        semanaObesos[week] = semanaObesos[week] || new Set();
+        semanaObesos[week].add(paciente.id);
+      }
+
+      // Presión: intentar parsear "systolic/diastolic" y calcular MAP
+      let map = null;
+      if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) {
+        const parts = d.presion.split('/').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+        if (parts.length >= 2) {
+          const sys = parts[0]; const dia = parts[1];
+          map = (sys + 2*dia) / 3;
+        } else if (parts.length === 1) {
+          // si solo hay un valor, usarlo como aproximación (menos ideal)
+          map = parts[0];
+        }
+      } else if (d.presion && !isNaN(parseFloat(d.presion))) {
+        map = parseFloat(d.presion);
+      }
+
+      if (map !== null && !isNaN(map) && map >= mapThreshold) {
+        semanaPresionAlta[week] = semanaPresionAlta[week] || new Set();
+        semanaPresionAlta[week].add(paciente.id);
+      }
+    });
+  });
+
+  // Construir rango de semanas (min..max) para eje X
+  const semanasSet = new Set([...Object.keys(semanaObesos), ...Object.keys(semanaPresionAlta)]);
+  if (semanasSet.size === 0) {
+    // No hay datos por semana
+    let sec = contenedor.querySelector('#global-charts-section');
+    if (!sec) {
+      sec = document.createElement('div'); sec.id = 'global-charts-section'; sec.className = 'estadisticas-seccion'; contenedor.appendChild(sec);
+    }
+    sec.innerHTML = '<h3>Gráficas Globales</h3><div class="alert-info">No hay suficientes datos semanales para generar las gráficas globales.</div>';
+    return;
+  }
+
+  const semanas = Array.from(semanasSet).sort();
+  const minWeek = semanas[0];
+  const maxWeek = semanas[semanas.length - 1];
+
+  // Rellenar semanas intermedias
+  const allWeeks = [];
+  let cursor = minWeek;
+  while (cursor <= maxWeek) {
+    allWeeks.push(cursor);
+    cursor = addWeeksISO(cursor, 1);
+  }
+
+  const labels = allWeeks.map(w => w);
+  const dataObesidad = allWeeks.map(w => (semanaObesos[w] ? semanaObesos[w].size : 0));
+  const dataPresion = allWeeks.map(w => (semanaPresionAlta[w] ? semanaPresionAlta[w].size : 0));
+
+  // Crear o actualizar sección en el DOM
+  let section = contenedor.querySelector('#global-charts-section');
+  if (!section) {
+    section = document.createElement('div');
+    section.id = 'global-charts-section';
+    section.className = 'estadisticas-seccion';
+    section.innerHTML = '<h3>Gráficas Globales</h3>';
+    // Append the global charts section at the end so it appears below the individual patient charts
+    contenedor.appendChild(section);
+  } else {
+    // Ensure the section is after individual charts by moving it to the end
+    contenedor.appendChild(section);
+  }
+  // Contenido de la sección
+  section.innerHTML = `
+    <h3>Gráficas Globales</h3>
+    <div class="global-charts-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="global-chart-card">
+        <div class="chart-card-header"><strong>Pacientes con obesidad (IMC ≥ ${imcThreshold}) — por semana</strong></div>
+        <div style="height:280px;"><canvas id="global-obesidad-chart"></canvas></div>
+      </div>
+      <div class="global-chart-card">
+        <div class="chart-card-header"><strong>Pacientes con presión arterial alta (MAP ≥ ${mapThreshold}) — por semana</strong></div>
+        <div style="height:280px;"><canvas id="global-presion-chart"></canvas></div>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:0.9rem;color:#6b7280;">Nota: Umbrales usados — IMC ≥ ${imcThreshold}; MAP ≥ ${mapThreshold}. Puedes ajustar estos parámetros en la configuración si es necesario.</div>
+  `;
+
+  // Crear gráficos
+  try {
+    const ctxOb = document.getElementById('global-obesidad-chart').getContext('2d');
+    // eslint-disable-next-line no-undef
+    new Chart(ctxOb, {
+      type: 'line',
+      data: { labels, datasets: [{ label: 'Obesidad (pacientes)', data: dataObesidad, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', fill: true, tension: 0.2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
+    });
+
+    const ctxPr = document.getElementById('global-presion-chart').getContext('2d');
+    // eslint-disable-next-line no-undef
+    new Chart(ctxPr, {
+      type: 'line',
+      data: { labels, datasets: [{ label: 'Presión alta (pacientes)', data: dataPresion, borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.08)', fill: true, tension: 0.2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
+    });
+  } catch (e) {
+    console.error('Error generando gráficas globales', e);
+    section.insertAdjacentHTML('beforeend', '<div class="alert-info">No se pudieron renderizar las gráficas globales.</div>');
+  }
 }
