@@ -933,6 +933,86 @@ function loadChartJS() {
   });
 }
 
+// Fallback: dibujador ligero de líneas usando Canvas para funcionar sin internet
+function drawSimpleLineChartOnCanvas(canvas, labels, data, opts = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width = canvas.clientWidth || 600;
+  const h = canvas.height = canvas.clientHeight || 240;
+  // Clear
+  ctx.clearRect(0, 0, w, h);
+
+  const padding = { top: 24, right: 20, bottom: 36, left: 40 };
+  const innerW = w - padding.left - padding.right;
+  const innerH = h - padding.top - padding.bottom;
+
+  // Ensure integer ticks and safe values
+  const numeric = data.map(v => (typeof v === 'number' && !isNaN(v)) ? v : 0);
+  const max = Math.max(...numeric, 1);
+  const min = 0;
+
+  // X positions
+  const stepX = innerW / Math.max(1, labels.length - 1);
+
+  // Draw axes
+  ctx.strokeStyle = '#e6eef2'; ctx.lineWidth = 1;
+  // Y axis
+  ctx.beginPath(); ctx.moveTo(padding.left, padding.top); ctx.lineTo(padding.left, padding.top + innerH); ctx.stroke();
+  // X axis
+  ctx.beginPath(); ctx.moveTo(padding.left, padding.top + innerH); ctx.lineTo(padding.left + innerW, padding.top + innerH); ctx.stroke();
+
+  // Y ticks
+  const ticks = 5;
+  ctx.fillStyle = '#374151'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= ticks; i++) {
+    const y = padding.top + innerH - (i / ticks) * innerH;
+    const value = Math.round(min + (i / ticks) * (max - min));
+    ctx.fillText(String(value), padding.left - 8, y);
+    ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(padding.left + innerW, y); ctx.strokeStyle = 'rgba(230,238,242,0.6)'; ctx.stroke();
+  }
+
+  // Draw line
+  ctx.beginPath();
+  numeric.forEach((v, idx) => {
+    const x = padding.left + (stepX * idx || 0);
+    const y = padding.top + innerH - ((v - min) / (max - min || 1)) * innerH;
+    if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = opts.color || '#06b6d4'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Draw points and labels
+  ctx.fillStyle = opts.color || '#06b6d4';
+  numeric.forEach((v, idx) => {
+    const x = padding.left + (stepX * idx || 0);
+    const y = padding.top + innerH - ((v - min) / (max - min || 1)) * innerH;
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    // value label
+    ctx.fillStyle = '#0f172a'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(String(v), x, y - 10);
+    ctx.fillStyle = opts.color || '#06b6d4';
+  });
+
+  // X labels (rotate if necessary)
+  ctx.fillStyle = '#374151'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  labels.forEach((lab, idx) => {
+    const x = padding.left + (stepX * idx || 0);
+    let text = String(lab);
+    // Shorten long labels
+    if (text.length > 12) text = text.slice(0, 12) + '...';
+    ctx.fillText(text, x, padding.top + innerH + 6);
+  });
+
+  // Title
+  if (opts.title) {
+    ctx.fillStyle = '#0f172a'; ctx.font = '14px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(opts.title, padding.left, 12);
+  }
+
+  // ARIA: set description
+  try {
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', opts.aria || opts.title || 'Gráfica');
+  } catch (e) {}
+}
+
   // Genera gráficas de línea para cada paciente con los campos: peso, IMC, glucosa, presión arterial y frecuencia respiratoria.
 export async function generarGraficasPorPaciente(containerId = 'contenedorEstadisticas') {
   insertarEstilosGraficos();
@@ -940,8 +1020,8 @@ export async function generarGraficasPorPaciente(containerId = 'contenedorEstadi
   const contenedor = document.getElementById(containerId);
   if (!contenedor) return;
 
-  // Cargar Chart.js
-  try { await loadChartJS(); } catch (err) { contenedor.insertAdjacentHTML('beforeend', `<div class="alert-info">No se pudo cargar la librería de gráficas (Chart.js).</div>`); console.error(err); return; }
+  // Intentar cargar Chart.js pero no detener la generación si falla (usaremos un renderer local de fallback)
+  try { await loadChartJS(); } catch (err) { console.warn('Chart.js no disponible, se usará renderer local de fallback si es necesario.', err); }
 
   const pacientes = pacienteModel.getPacientes();
   if (!pacientes || pacientes.length === 0) {
@@ -1433,7 +1513,14 @@ export async function generarGraficasGlobales(containerId = 'contenedorEstadisti
     cursor = addWeeksISO(cursor, 1);
   }
 
-  const labels = allWeeks.map(w => w);
+  const labelsISO = allWeeks.map(w => w);
+  // Formato legible para eje X: 'Lun 20/10'
+  const labels = allWeeks.map(w => {
+    try {
+      const d = new Date(w + 'T00:00:00');
+      return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    } catch (e) { return w; }
+  });
   const dataObesidad = allWeeks.map(w => (semanaObesos[w] ? semanaObesos[w].size : 0));
   const dataPresion = allWeeks.map(w => (semanaPresionAlta[w] ? semanaPresionAlta[w].size : 0));
 
@@ -1466,23 +1553,35 @@ export async function generarGraficasGlobales(containerId = 'contenedorEstadisti
     <div style="margin-top:10px;font-size:0.9rem;color:#6b7280;">Nota: Umbrales usados — IMC ≥ ${imcThreshold}; MAP ≥ ${mapThreshold}. Puedes ajustar estos parámetros en la configuración si es necesario.</div>
   `;
 
-  // Crear gráficos
+  // Crear gráficos: preferir Chart.js si está disponible, si no usar fallback canvas
   try {
-    const ctxOb = document.getElementById('global-obesidad-chart').getContext('2d');
-    // eslint-disable-next-line no-undef
-    new Chart(ctxOb, {
-      type: 'line',
-      data: { labels, datasets: [{ label: 'Obesidad (pacientes)', data: dataObesidad, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', fill: true, tension: 0.2 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
-    });
+    if (window.Chart) {
+      const ctxOb = document.getElementById('global-obesidad-chart').getContext('2d');
+      // eslint-disable-next-line no-undef
+      new Chart(ctxOb, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Obesidad (pacientes)', data: dataObesidad, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', fill: true, tension: 0.2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
+      });
 
-    const ctxPr = document.getElementById('global-presion-chart').getContext('2d');
-    // eslint-disable-next-line no-undef
-    new Chart(ctxPr, {
-      type: 'line',
-      data: { labels, datasets: [{ label: 'Presión alta (pacientes)', data: dataPresion, borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.08)', fill: true, tension: 0.2 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
-    });
+      const ctxPr = document.getElementById('global-presion-chart').getContext('2d');
+      // eslint-disable-next-line no-undef
+      new Chart(ctxPr, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Presión alta (pacientes)', data: dataPresion, borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.08)', fill: true, tension: 0.2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: true }, y: { beginAtZero: true, ticks: { precision:0 } } } }
+      });
+    } else {
+      // Fallback sin dependencias externas
+      const canvasOb = document.getElementById('global-obesidad-chart');
+      const canvasPr = document.getElementById('global-presion-chart');
+      // Asegurar tamaños visibles
+      canvasOb.style.width = '100%'; canvasOb.style.height = '240px';
+      canvasPr.style.width = '100%'; canvasPr.style.height = '240px';
+
+      drawSimpleLineChartOnCanvas(canvasOb, labels, dataObesidad, { title: `Obesidad (IMC ≥ ${imcThreshold})`, color: '#ef4444', aria: `Pacientes con obesidad por semana. Valores exactos de conteo.` });
+      drawSimpleLineChartOnCanvas(canvasPr, labels, dataPresion, { title: `Presión alta (MAP ≥ ${mapThreshold})`, color: '#06b6d4', aria: `Pacientes con presión arterial alta por semana. Valores exactos de conteo.` });
+    }
   } catch (e) {
     console.error('Error generando gráficas globales', e);
     section.insertAdjacentHTML('beforeend', '<div class="alert-info">No se pudieron renderizar las gráficas globales.</div>');
