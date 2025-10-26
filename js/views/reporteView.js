@@ -1102,40 +1102,51 @@ export function renderPatientListAndSelector(containerId = 'contenedorEstadistic
   const listPanel = layout.querySelector('.patient-list-panel');
   const chartsPanel = layout.querySelector('.patient-charts-panel');
 
-  // Obtener pacientes
-  const pacientes = pacienteModel.getPacientes();
-  if (!pacientes || pacientes.length === 0) {
-    listPanel.innerHTML = '<div class="alert-info">No hay pacientes registrados</div>';
-    return;
-  }
+  // Crear un selector desplegable que no cargue todas las opciones hasta interacción
+  const select = document.createElement('select');
+  select.id = 'patient-select';
+  select.className = 'patient-select';
 
-  // Buscar input (por nombre y matrícula)
-  const searchInput = document.createElement('input');
-  searchInput.type = 'search';
-  searchInput.placeholder = 'Buscar paciente...';
-  searchInput.className = 'patient-search-input';
+  // Opción placeholder (por defecto)
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '— Selecciona un paciente —';
+  placeholder.selected = true;
+  placeholder.disabled = true;
+  select.appendChild(placeholder);
 
-  const ul = document.createElement('ul');
-  ul.className = 'patient-list-ul';
+  // Opción para mostrar todos (se mantiene pero no carga listado individual hasta que se pida)
+  const optionAll = document.createElement('option');
+  optionAll.value = 'ALL';
+  optionAll.textContent = 'Mostrar todos';
+  select.appendChild(optionAll);
 
-  // Opción para mostrar todos
-  const allItem = document.createElement('li');
-  allItem.className = 'patient-list-item all-item active';
-  allItem.textContent = 'Mostrar todos';
-  allItem.dataset.id = 'ALL';
-  ul.appendChild(allItem);
+  // Flag para cargar pacientes solo una vez cuando el usuario interactúe
+  let pacientesCargados = false;
 
-  pacientes.forEach(p => {
-    const li = document.createElement('li');
-    li.className = 'patient-list-item';
-    li.textContent = `${p.nombre} ${p.apellidos || ''}`;
-    li.title = `${p.matricula}`;
-    li.dataset.id = p.id;
-    ul.appendChild(li);
-  });
+  // Función para poblar opciones de pacientes
+  const poblarOpcionesPacientes = () => {
+    if (pacientesCargados) return;
+    pacientesCargados = true;
+    const pacientes = pacienteModel.getPacientes();
+    if (!pacientes || pacientes.length === 0) {
+      listPanel.innerHTML = '<div class="alert-info">No hay pacientes registrados</div>';
+      return;
+    }
 
-  listPanel.appendChild(searchInput);
-  listPanel.appendChild(ul);
+    pacientes.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.nombre} ${p.apellidos || ''} — ${p.matricula || ''}`;
+      select.appendChild(opt);
+    });
+  };
+
+  // Cargar opciones cuando el usuario abra/active el select (focus or mousedown)
+  select.addEventListener('focus', poblarOpcionesPacientes, { once: true });
+  select.addEventListener('mousedown', poblarOpcionesPacientes, { once: true });
+
+  listPanel.appendChild(select);
 
   // Estilos para el panel (inserción ligera si no existen)
   if (!document.getElementById('patient-list-styles')) {
@@ -1155,51 +1166,28 @@ export function renderPatientListAndSelector(containerId = 'contenedorEstadistic
     display: block;
   }
       .patient-search-input { width: 100%; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e5e7eb; }
-      .patient-list-ul { list-style: none; padding: 0; margin:0; }
-      .patient-list-item { padding: 10px 8px; border-radius: 6px; cursor: pointer; color: #0f172a; margin-bottom: 6px; }
-      .patient-list-item:hover { background: #f1f5f9; }
-      .patient-list-item.active { background: linear-gradient(90deg,#e6f7fb,#f0f9ff); border-left: 3px solid #06b6d4; }
-      .patient-list-item.all-item { font-weight: 700; }
+        .patient-select { width: 100%; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; font-size: 0.95rem; }
+        .patient-list-ul { list-style: none; padding: 0; margin:0; }
+        .patient-list-item { padding: 10px 8px; border-radius: 6px; cursor: pointer; color: #0f172a; margin-bottom: 6px; }
+        .patient-list-item:hover { background: #f1f5f9; }
+        .patient-list-item.active { background: linear-gradient(90deg,#e6f7fb,#f0f9ff); border-left: 3px solid #06b6d4; }
+        .patient-list-item.all-item { font-weight: 700; }
     `;
     document.head.appendChild(s);
   }
 
-  // Filtrado de lista (por nombre y por matrícula)
-  searchInput.addEventListener('input', (e) => {
-    const term = (e.target.value || '').toLowerCase().trim();
-    const items = ul.querySelectorAll('.patient-list-item');
-    items.forEach(it => {
-      const nombre = (it.textContent || '').toLowerCase();
-      const matricula = (it.title || '').toLowerCase();
-      const matches = nombre.includes(term) || matricula.includes(term);
-      it.style.display = matches ? '' : 'none';
-    });
-  });
-
-  // Click en lista: marcar activo y renderizar gráfica del paciente
-  ul.addEventListener('click', (e) => {
-    const li = e.target.closest('.patient-list-item');
-    if (!li) return;
-    // Marcar activo
-    ul.querySelectorAll('.patient-list-item').forEach(i => i.classList.remove('active'));
-    li.classList.add('active');
-
-    const id = li.dataset.id;
-    // Limpiar panel de charts y generar
+  // Cambio en el select: generar gráfica del paciente seleccionado o todos
+  select.addEventListener('change', (e) => {
+    const id = e.target.value;
+    // Si el usuario dejó la opción placeholder, no hacemos nada
+    if (!id) return;
     chartsPanel.innerHTML = '';
-    // Usar containerId 'patient-charts-panel' para generar gráficos dentro del panel
     if (id === 'ALL') {
-      // Generar para todos dentro chartsPanel
       generarGraficasPorPaciente('patient-charts-panel');
     } else {
-      // Generar solo para el paciente seleccionado
       renderSinglePacienteChart(id, 'patient-charts-panel');
     }
   });
-
-  // Activar por defecto: seleccionar primer paciente (o 'Mostrar todos')
-  const first = ul.querySelector('.patient-list-item');
-  if (first) first.click();
 }
 
 // Renderiza únicamente la gráfica de un paciente dado en el containerId
@@ -1269,10 +1257,14 @@ try {
   eventBus.on(EVENT_NAMES.PACIENTE_UPDATED, (payload) => {
     const panel = document.getElementById('patient-charts-panel');
     if (!panel) return;
-    // Determinar paciente seleccionado actualmente
-    const active = document.querySelector('.patient-list-item.active');
-    const selectedId = active ? active.dataset.id : null;
-    if (selectedId === 'ALL' || !selectedId) {
+    // Determinar paciente seleccionado actualmente desde el select
+    const select = document.getElementById('patient-select');
+    const selectedId = select ? select.value : null;
+    if (!selectedId || selectedId === '') {
+      // nada seleccionado: no refrescar automáticamente
+      return;
+    }
+    if (selectedId === 'ALL') {
       generarGraficasPorPaciente('patient-charts-panel');
     } else {
       renderSinglePacienteChart(selectedId, 'patient-charts-panel');
@@ -1282,13 +1274,26 @@ try {
   eventBus.on(EVENT_NAMES.PACIENTE_CREATED, () => {
     const panel = document.getElementById('patient-charts-panel');
     if (!panel) return;
-    generarGraficasPorPaciente('patient-charts-panel');
+    const select = document.getElementById('patient-select');
+    const selectedId = select ? select.value : null;
+    if (selectedId === 'ALL') {
+      generarGraficasPorPaciente('patient-charts-panel');
+    } else if (selectedId && selectedId !== '') {
+      // si el paciente creado es el seleccionado, refrescar (payload may include id but not passed here)
+      renderSinglePacienteChart(selectedId, 'patient-charts-panel');
+    }
   });
 
   eventBus.on(EVENT_NAMES.PACIENTE_DELETED, () => {
     const panel = document.getElementById('patient-charts-panel');
     if (!panel) return;
-    generarGraficasPorPaciente('patient-charts-panel');
+    const select = document.getElementById('patient-select');
+    const selectedId = select ? select.value : null;
+    if (selectedId === 'ALL') {
+      generarGraficasPorPaciente('patient-charts-panel');
+    } else if (selectedId && selectedId !== '') {
+      renderSinglePacienteChart(selectedId, 'patient-charts-panel');
+    }
   });
 } catch (e) {
   console.warn('No se pudo suscribir al EventBus para actualizaciones de pacientes', e);
