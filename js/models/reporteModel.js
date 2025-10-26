@@ -302,6 +302,100 @@ export const reporteModel = {
       `;
     }
 
+    // Generador de SVG para presión arterial combinada (muestra ambos valores y etiqueta "SYS/DIA" en cada punto)
+    function generarSVGPresionCombinada(puntos, opts = {}) {
+      const width = opts.width || 520;
+      const height = opts.height || 120;
+      const padding = 8;
+      if (!puntos || puntos.length === 0) {
+        return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><text x="${width/2}" y="${height/2}" font-size="12" text-anchor="middle" fill="#888">Sin datos</text></svg>`;
+      }
+
+      // Extraer valores numéricos para escalado (usar ambos sys y dia)
+      const valsSys = puntos.map(p => Number(p.systolic)).filter(v => !isNaN(v));
+      const valsDia = puntos.map(p => Number(p.diastolic)).filter(v => !isNaN(v));
+      const allVals = valsSys.concat(valsDia);
+      if (allVals.length === 0) return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><text x="${width/2}" y="${height/2}" font-size="12" text-anchor="middle" fill="#888">Sin datos numéricos</text></svg>`;
+
+      const min = Math.min(...allVals);
+      const max = Math.max(...allVals);
+      const range = max - min || 1;
+
+      const stepX = (width - padding * 2) / (puntos.length - 1 || 1);
+      const coordsSys = puntos.map((p, i) => ({ x: padding + i * stepX, y: padding + (height - padding * 2) * (1 - ((Number(p.systolic) - min) / range)), v: p.systolic }));
+      const coordsDia = puntos.map((p, i) => ({ x: padding + i * stepX, y: padding + (height - padding * 2) * (1 - ((Number(p.diastolic) - min) / range)), v: p.diastolic }));
+
+      const pathSys = coordsSys.map((c, i) => (i === 0 ? `M ${c.x} ${c.y}` : `L ${c.x} ${c.y}`)).join(' ');
+      const pathDia = coordsDia.map((c, i) => (i === 0 ? `M ${c.x} ${c.y}` : `L ${c.x} ${c.y}`)).join(' ');
+
+      // Labels: min/max
+      const minLabel = min.toFixed(0);
+      const maxLabel = max.toFixed(0);
+
+      // Build SVG with two lines and combined labels at each point
+      let pointsLabels = '';
+      puntos.forEach((p, i) => {
+        const cs = coordsSys[i];
+        const cd = coordsDia[i];
+        const label = (p.systolic || p.diastolic) ? `${p.systolic || '-'} / ${p.diastolic || '-'}` : '-';
+        pointsLabels += `<text x="${cs.x}" y="${Math.min(cs.y, cd.y) - 6}" font-size="10" text-anchor="middle" fill="#0f172a">${label}</text>`;
+      });
+
+      return `
+        <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background:transparent">
+          <rect width="100%" height="100%" fill="transparent" />
+          <path d="${pathDia}" fill="none" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6 4" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="${pathSys}" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          ${pointsLabels}
+          <text x="${padding}" y="${padding + 10}" font-size="10" fill="#444">Max: ${maxLabel}</text>
+          <text x="${padding}" y="${height - 4}" font-size="10" fill="#666">Min: ${minLabel}</text>
+        </svg>
+      `;
+    }
+
+    // Intentar capturar canvases de Chart.js para fidelidad visual.
+    // Construiremos un mapa patientId -> { paramKey: dataURL }
+    function capturarGraficasPaciente(pacienteId) {
+      const keys = ['peso','imc','presion','glucosa','frecuencia','frecuenciaRespiratoria','presion_sistolica','presion_diastolica','temperatura','talla'];
+      const out = {};
+      if (!pacienteId) return out;
+      keys.forEach(k => {
+        // Comprobar varios patrones de id usados en la vista
+        const idsToTry = [
+          `chart-${pacienteId}-${k}`,
+          `chart-single-${pacienteId}-${k}`,
+          `chart-${pacienteId}-${k.toLowerCase()}`
+        ];
+        for (const id of idsToTry) {
+          try {
+            const el = document.getElementById(id);
+            if (el && el.tagName && el.tagName.toLowerCase() === 'canvas') {
+              try { out[k] = el.toDataURL('image/png'); break; } catch (e) { /* cross-origin or other */ }
+            }
+          } catch (e) { /* noop */ }
+        }
+      });
+      // También intentar localizar un canvas genérico dentro del contenedor del paciente
+      try {
+        const container = document.querySelector(`#patient-params-${pacienteId}`) || document.querySelector(`#patient-params-single-${pacienteId}`) || document.querySelector(`#patient-params-${pacienteId}`);
+        if (container) {
+          const canv = container.querySelector('canvas');
+          if (canv && canv.toDataURL) {
+            out['any'] = canv.toDataURL('image/png');
+          }
+        }
+      } catch (e) {}
+      return out;
+    }
+
+    const imagesMap = {};
+    try {
+      registros.forEach(r => {
+        const pid = (r && r.paciente && (r.paciente.id || r.paciente.matricula)) || (r && (r.id || r.matricula || r.pacienteId));
+        if (pid) imagesMap[pid] = capturarGraficasPaciente(pid);
+      });
+    } catch (e) { /* noop */ }
+
     let html = `<!doctype html><html><head><meta charset="utf-8"><title>${nombreArchivo}</title>`;
     html += `<style>body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;background:#fff}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #eee;padding-bottom:8px}header h1{font-size:20px;margin:0}header .meta{font-size:12px;color:#666}footer{position:fixed;left:0;right:0;bottom:0;padding:8px 24px;font-size:11px;color:#666;border-top:1px solid #eee;background:#fff}section.record{page-break-inside:avoid;margin-bottom:18px;padding:12px;border:1px solid #f0f0f0;border-radius:6px;background:#fff}section.record h2{margin:0 0 8px 0;font-size:16px}ul.record-list{list-style:none;padding:0;margin:0;display:block}ul.record-list li{padding:4px 0;border-bottom:1px dashed #f3f3f3;font-size:13px}ul.record-list li strong{display:inline-block;width:160px;color:#374151}</style>`;
     html += `</head><body>`;
@@ -324,19 +418,65 @@ export const reporteModel = {
         if (paciente.carrera) html += `<li><strong>Carrera:</strong> ${paciente.carrera}</li>`;
         html += `</ul>`;
 
-        // Sección de gráficas por parámetro
+        // Sección de gráficas por parámetro (usar imagen de canvas si está disponible para fidelidad)
         html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3>`;
         const ps = fila.parametrosSeries || {};
+        const pid = paciente.id || paciente.matricula || paciente.pacienteId || paciente.pacienteNombre || tituloP;
+        const imgs = imagesMap[pid] || {};
+
+        // Helper para renderizar imagen o fallback SVG
+        const renderImgOrSVG = (imgKey, svgHtml) => {
+          if (imgs && imgs[imgKey]) return `<div><img src="${imgs[imgKey]}" style="max-width:520px;height:auto;display:block;border:1px solid #eee;border-radius:4px"/></div>`;
+          if (imgs && imgs['any']) return `<div><img src="${imgs['any']}" style="max-width:520px;height:auto;display:block;border:1px solid #eee;border-radius:4px"/></div>`;
+          return svgHtml;
+        };
+
         // temperatura
-        html += `<div style="margin:8px 0"><strong>Temperatura (°C)</strong><div>${generarSVGSerie(ps.temperatura || [], { width:520, height:120, stroke: '#ef4444' })}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Temperatura (°C)</strong><div>${renderImgOrSVG('temperatura', generarSVGSerie(ps.temperatura || [], { width:520, height:120, stroke: '#ef4444' }))}</div></div>`;
         // peso
-        html += `<div style="margin:8px 0"><strong>Peso (kg)</strong><div>${generarSVGSerie(ps.peso || [], { width:520, height:120, stroke: '#10b981' })}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Peso (kg)</strong><div>${renderImgOrSVG('peso', generarSVGSerie(ps.peso || [], { width:520, height:120, stroke: '#10b981' }))}</div></div>`;
         // talla
-        html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' })}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${renderImgOrSVG('talla', generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' }))}</div></div>`;
+        // IMC (calcular a partir de peso/talla si no existe explícitamente)
+        try {
+          const tallaMap = {};
+          (ps.talla || []).forEach(t => { if (t && t.fecha) tallaMap[t.fecha] = Number(t.valor); });
+          let lastT = null;
+          const imcSeries = (ps.peso || []).map(p => {
+            const f = p.fecha; const pesoV = Number(p.valor);
+            if (tallaMap[f]) lastT = tallaMap[f];
+            const tallaV = lastT || (ps.talla && ps.talla.length ? Number(ps.talla[ps.talla.length - 1].valor) : null);
+            const imc = (pesoV && tallaV) ? parseFloat((pesoV / Math.pow((tallaV/100),2)).toFixed(1)) : null;
+            return imc !== null ? { fecha: f, valor: imc } : null;
+          }).filter(x=>x);
+          html += `<div style="margin:8px 0"><strong>IMC</strong><div>${renderImgOrSVG('imc', generarSVGSerie(imcSeries || [], { width:520, height:120, stroke: '#8b5cf6' }))}</div></div>`;
+        } catch(e) { /* noop */ }
+
+        // glucosa
+        html += `<div style="margin:8px 0"><strong>Glucosa (mg/dL)</strong><div>${renderImgOrSVG('glucosa', generarSVGSerie(ps.glucosa || [], { width:520, height:120, stroke: '#f97316' }))}</div></div>`;
+
         // frecuencia respiratoria
-        html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' })}</div></div>`;
-  // presión sistólica/diastólica
-  html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Arterial (Sistólica)</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
+        html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${renderImgOrSVG('frecuencia', generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' }))}</div></div>`;
+
+        // presión combinada (usar imagen si existe)
+        try {
+          const combined = [];
+          if (ps.presion && Array.isArray(ps.presion) && ps.presion.length) {
+            ps.presion.forEach(p => {
+              const v = String(p.valor || p).trim();
+              const m = v.match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+              combined.push({ fecha: p.fecha, systolic: m ? Number(m[1]) : (isFinite(Number(p.valor))?Number(p.valor):null), diastolic: m ? Number(m[2]) : null });
+            });
+          } else if ((ps.presion_sistolica || []).length || (ps.presion_diastolica || []).length) {
+            const byFechaSys = {};
+            (ps.presion_sistolica || []).forEach(s => { if (s && s.fecha) byFechaSys[s.fecha] = Number(s.valor); });
+            const byFechaDia = {};
+            (ps.presion_diastolica || []).forEach(d => { if (d && d.fecha) byFechaDia[d.fecha] = Number(d.valor); });
+            const fechas = new Set([...Object.keys(byFechaSys), ...Object.keys(byFechaDia)]);
+            Array.from(fechas).sort().forEach(f => { combined.push({ fecha: f, systolic: byFechaSys[f] || null, diastolic: byFechaDia[f] || null }); });
+          }
+          html += `<div style="margin:8px 0"><strong>Presión Arterial (Sistólica/Diastólica)</strong><div>${renderImgOrSVG('presion', generarSVGPresionCombinada(combined || [], { width:520, height:120 }))}</div></div>`;
+        } catch(e) { /* noop */ }
         html += `</div>`;
 
         // Observaciones del personal médico
@@ -459,7 +599,7 @@ export const reporteModel = {
       const tieneDatosMedicos = fila.datosMedicos && Object.keys(fila.datosMedicos).length > 0;
       if (tieneCambios || tieneDatosMedicos) {
         // Construir series
-        const ps = { temperatura: [], peso: [], talla: [], frecuenciaRespiratoria: [], presion_sistolica: [], presion_diastolica: [] };
+        const ps = { temperatura: [], peso: [], talla: [], frecuenciaRespiratoria: [], presion_combined: [], glucosa: [] };
 
         (fila.historialCambios || []).forEach(cambio => {
           const fecha = cambio.fecha || cambio.datos?.fechaRegistroMedico || null;
@@ -468,9 +608,11 @@ export const reporteModel = {
           if (datos.peso) ps.peso.push({ fecha, valor: parseFloat(datos.peso) });
           if (datos.talla) ps.talla.push({ fecha, valor: parseFloat(datos.talla) });
           if (datos.frecuenciaRespiratoria) ps.frecuenciaRespiratoria.push({ fecha, valor: parseFloat(datos.frecuenciaRespiratoria) });
+          if (datos.glucosa) ps.glucosa.push({ fecha, valor: parseFloat(datos.glucosa) });
           if (datos.presion) {
             const m = String(datos.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
-            if (m) { ps.presion_sistolica.push({ fecha, valor: parseInt(m[1]) }); ps.presion_diastolica.push({ fecha, valor: parseInt(m[2]) }); }
+            if (m) { ps.presion_combined.push({ fecha, systolic: parseInt(m[1]), diastolic: parseInt(m[2]) }); }
+            else if (!isNaN(Number(datos.presion))) { ps.presion_combined.push({ fecha, systolic: Number(datos.presion), diastolic: null }); }
           }
         });
 
@@ -482,20 +624,47 @@ export const reporteModel = {
           if (dm.peso) ps.peso.push({ fecha, valor: parseFloat(dm.peso) });
           if (dm.talla) ps.talla.push({ fecha, valor: parseFloat(dm.talla) });
           if (dm.frecuenciaRespiratoria) ps.frecuenciaRespiratoria.push({ fecha, valor: parseFloat(dm.frecuenciaRespiratoria) });
+          if (dm.glucosa) ps.glucosa.push({ fecha, valor: parseFloat(dm.glucosa) });
           if (dm.presion) {
             const m = String(dm.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
-            if (m) { ps.presion_sistolica.push({ fecha, valor: parseInt(m[1]) }); ps.presion_diastolica.push({ fecha, valor: parseInt(m[2]) }); }
+            if (m) { ps.presion_combined.push({ fecha, systolic: parseInt(m[1]), diastolic: parseInt(m[2]) }); }
+            else if (!isNaN(Number(dm.presion))) { ps.presion_combined.push({ fecha, systolic: Number(dm.presion), diastolic: null }); }
           }
         }
 
-        Object.keys(ps).forEach(k => ps[k].sort((a,b) => new Date(a.fecha) - new Date(b.fecha)));
+        Object.keys(ps).forEach(k => {
+          if (Array.isArray(ps[k])) ps[k].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+        });
 
         html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3>`;
-        html += `<div style="margin:8px 0"><strong>Temperatura (°C)</strong><div>${generarSVGSerie(ps.temperatura || [], { width:520, height:120, stroke: '#ef4444' })}</div></div>`;
-        html += `<div style="margin:8px 0"><strong>Peso (kg)</strong><div>${generarSVGSerie(ps.peso || [], { width:520, height:120, stroke: '#10b981' })}</div></div>`;
-        html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' })}</div></div>`;
-        html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' })}</div></div>`;
-  html += `<div style="margin:8px 0;display:flex;gap:12px"><div style="flex:1"><strong>Presión Arterial (Sistólica)</strong><div>${generarSVGSerie(ps.presion_sistolica || [], { width:250, height:100, stroke: '#7c3aed' })}</div></div><div style="flex:1"><strong>Presión Diastólica</strong><div>${generarSVGSerie(ps.presion_diastolica || [], { width:250, height:100, stroke: '#a21caf' })}</div></div></div>`;
+        const imgsHist = imagesMap[posiblePacienteId] || {};
+        const renderImgOrSVGHist = (imgKey, svgHtml) => {
+          if (imgsHist && imgsHist[imgKey]) return `<div><img src="${imgsHist[imgKey]}" style="max-width:520px;height:auto;display:block;border:1px solid #eee;border-radius:4px"/></div>`;
+          if (imgsHist && imgsHist['any']) return `<div><img src="${imgsHist['any']}" style="max-width:520px;height:auto;display:block;border:1px solid #eee;border-radius:4px"/></div>`;
+          return svgHtml;
+        };
+
+        html += `<div style="margin:8px 0"><strong>Temperatura (°C)</strong><div>${renderImgOrSVGHist('temperatura', generarSVGSerie(ps.temperatura || [], { width:520, height:120, stroke: '#ef4444' }))}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Peso (kg)</strong><div>${renderImgOrSVGHist('peso', generarSVGSerie(ps.peso || [], { width:520, height:120, stroke: '#10b981' }))}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Talla (cm)</strong><div>${renderImgOrSVGHist('talla', generarSVGSerie(ps.talla || [], { width:520, height:120, stroke: '#3b82f6' }))}</div></div>`;
+        // IMC
+        try {
+          const tallaMap = {};
+          (ps.talla || []).forEach(t => { if (t && t.fecha) tallaMap[t.fecha] = Number(t.valor); });
+          let lastT = null;
+          const imcSeries = (ps.peso || []).map(p => {
+            const f = p.fecha; const pesoV = Number(p.valor);
+            if (tallaMap[f]) lastT = tallaMap[f];
+            const tallaV = lastT || (ps.talla && ps.talla.length ? Number(ps.talla[ps.talla.length - 1].valor) : null);
+            const imc = (pesoV && tallaV) ? parseFloat((pesoV / Math.pow((tallaV/100),2)).toFixed(1)) : null;
+            return imc !== null ? { fecha: f, valor: imc } : null;
+          }).filter(x=>x);
+          html += `<div style="margin:8px 0"><strong>IMC</strong><div>${renderImgOrSVGHist('imc', generarSVGSerie(imcSeries || [], { width:520, height:120, stroke: '#8b5cf6' }))}</div></div>`;
+        } catch(e) { /* noop */ }
+
+        html += `<div style="margin:8px 0"><strong>Glucosa (mg/dL)</strong><div>${renderImgOrSVGHist('glucosa', generarSVGSerie(ps.glucosa || [], { width:520, height:120, stroke: '#f97316' }))}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${renderImgOrSVGHist('frecuencia', generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' }))}</div></div>`;
+        html += `<div style="margin:8px 0"><strong>Presión Arterial (Sistólica/Diastólica)</strong><div>${renderImgOrSVGHist('presion', generarSVGPresionCombinada(ps.presion_combined || [], { width:520, height:120 }))}</div></div>`;
         html += `</div>`;
 
         // Observaciones desde historial central
