@@ -397,7 +397,23 @@ export const reporteModel = {
     } catch (e) { /* noop */ }
 
     let html = `<!doctype html><html><head><meta charset="utf-8"><title>${nombreArchivo}</title>`;
-    html += `<style>body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;background:#fff}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #eee;padding-bottom:8px}header h1{font-size:20px;margin:0}header .meta{font-size:12px;color:#666}footer{position:fixed;left:0;right:0;bottom:0;padding:8px 24px;font-size:11px;color:#666;border-top:1px solid #eee;background:#fff}section.record{page-break-inside:avoid;margin-bottom:18px;padding:12px;border:1px solid #f0f0f0;border-radius:6px;background:#fff}section.record h2{margin:0 0 8px 0;font-size:16px}ul.record-list{list-style:none;padding:0;margin:0;display:block}ul.record-list li{padding:4px 0;border-bottom:1px dashed #f3f3f3;font-size:13px}ul.record-list li strong{display:inline-block;width:160px;color:#374151}</style>`;
+    html += `<style>
+      body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111;background:#fff}
+      header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #eee;padding-bottom:8px}
+      header .branding{display:flex;align-items:center;gap:12px}
+      header h1{font-size:18px;margin:0}
+      header .meta{font-size:12px;color:#666}
+      footer{position:fixed;left:0;right:0;bottom:0;padding:8px 24px;font-size:11px;color:#666;border-top:1px solid #eee;background:#fff}
+      section.record{page-break-inside:avoid;margin-bottom:18px;padding:12px;border:1px solid #f0f0f0;border-radius:6px;background:#fff;position:relative}
+      section.record h2{margin:0 0 8px 0;font-size:16px}
+      ul.record-list{list-style:none;padding:0;margin:0;display:block}
+      ul.record-list li{padding:4px 0;border-bottom:1px dashed #f3f3f3;font-size:13px}
+      ul.record-list li strong{display:inline-block;width:160px;color:#374151}
+      .graphs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-items:start;margin-top:8px}
+      .graphs-grid .graph-card{background:#fff;border:1px solid #f3f4f6;border-radius:6px;padding:8px}
+      .patient-photo{position:absolute;right:16px;top:16px;width:96px;height:96px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center}
+      .patient-photo img{width:100%;height:100%;object-fit:cover}
+    </style>`;
     html += `</head><body>`;
 
     html += `<header><h1>${appTitle}</h1><div class="meta">Exportado: ${new Date().toLocaleString()}</div></header>`;
@@ -406,8 +422,18 @@ export const reporteModel = {
       // Si el registro es un objeto enriquecido para exportar historial de un paciente
       if (fila && fila.paciente && fila.parametrosSeries) {
         const paciente = fila.paciente || {};
-        html += `<section class="record">`;
+        html += `<section class="record" style="position:relative">`;
         const tituloP = `${paciente.nombre || paciente.pacienteNombre || 'Paciente'} ${paciente.apellidos || ''}`.trim();
+        // Área para fotografía del paciente (arriba derecha). Si existe url en paciente.photo/paciente.foto/paciente.imagen la mostramos; si no, silueta gris.
+        try {
+          const photoSrc = paciente.photo || paciente.photoUrl || paciente.foto || paciente.imagen || null;
+          if (photoSrc) {
+            html += `<div style="position:absolute;right:16px;top:16px;width:96px;height:96px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff"><img src="${photoSrc}" style="width:100%;height:100%;object-fit:cover"/></div>`;
+          } else {
+            html += `<div style="position:absolute;right:16px;top:16px;width:96px;height:96px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f3f4f6"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="#9CA3AF"/><path d="M3 20c0-3.866 3.582-7 9-7s9 3.134 9 7v1H3v-1z" fill="#D1D5DB"/></svg></div>`;
+          }
+        } catch (e) { /* noop */ }
+
         html += `<h2>${tituloP}</h2>`;
 
         // Información básica del paciente
@@ -418,8 +444,8 @@ export const reporteModel = {
         if (paciente.carrera) html += `<li><strong>Carrera:</strong> ${paciente.carrera}</li>`;
         html += `</ul>`;
 
-        // Sección de gráficas por parámetro (usar imagen de canvas si está disponible para fidelidad)
-        html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3>`;
+  // Sección de gráficas por parámetro (usar imagen de canvas si está disponible para fidelidad)
+  html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3><div class="graphs-grid">`;
         const ps = fila.parametrosSeries || {};
         const pid = paciente.id || paciente.matricula || paciente.pacienteId || paciente.pacienteNombre || tituloP;
         const imgs = imagesMap[pid] || {};
@@ -477,7 +503,7 @@ export const reporteModel = {
           }
           html += `<div style="margin:8px 0"><strong>Presión Arterial (Sistólica/Diastólica)</strong><div>${renderImgOrSVG('presion', generarSVGPresionCombinada(combined || [], { width:520, height:120 }))}</div></div>`;
         } catch(e) { /* noop */ }
-        html += `</div>`;
+  html += `</div></div>`;
 
         // Observaciones del personal médico
         html += `<div style="margin-top:12px"><h3>Observaciones del personal médico</h3>`;
@@ -557,8 +583,18 @@ export const reporteModel = {
       }
 
       // Comportamiento por defecto (anteriores formatos)
-      html += `<section class="record">`;
+      html += `<section class="record" style="position:relative">`;
       const titulo = (fila.nombre || fila.pacienteNombre) ? `${fila.nombre || fila.pacienteNombre} ${fila.apellidos || ''}`.trim() : (fila.matricula || fila.pacienteNombre || `Registro ${idx + 1}`);
+      // Marco de fotografía genérico para registros/pacientes (arriba derecha)
+      try {
+        const photoSrcDefault = fila.photo || fila.photoUrl || fila.foto || fila.imagen || null;
+        if (photoSrcDefault) {
+          html += `<div style="position:absolute;right:16px;top:16px;width:96px;height:96px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff"><img src="${photoSrcDefault}" style="width:100%;height:100%;object-fit:cover"/></div>`;
+        } else {
+          html += `<div style="position:absolute;right:16px;top:16px;width:96px;height:96px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f3f4f6"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="#9CA3AF"/><path d="M3 20c0-3.866 3.582-7 9-7s9 3.134 9 7v1H3v-1z" fill="#D1D5DB"/></svg></div>`;
+        }
+      } catch (e) { /* noop */ }
+
       html += `<h2>${titulo}</h2>`;
       html += `<ul class="record-list">`;
 
@@ -636,7 +672,7 @@ export const reporteModel = {
           if (Array.isArray(ps[k])) ps[k].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
         });
 
-        html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3>`;
+  html += `<div style="margin-top:12px"><h3>Gráficas por parámetro</h3><div class="graphs-grid">`;
         const imgsHist = imagesMap[posiblePacienteId] || {};
         const renderImgOrSVGHist = (imgKey, svgHtml) => {
           if (imgsHist && imgsHist[imgKey]) return `<div><img src="${imgsHist[imgKey]}" style="max-width:520px;height:auto;display:block;border:1px solid #eee;border-radius:4px"/></div>`;
@@ -665,7 +701,7 @@ export const reporteModel = {
         html += `<div style="margin:8px 0"><strong>Glucosa (mg/dL)</strong><div>${renderImgOrSVGHist('glucosa', generarSVGSerie(ps.glucosa || [], { width:520, height:120, stroke: '#f97316' }))}</div></div>`;
         html += `<div style="margin:8px 0"><strong>Frecuencia Respiratoria (rpm)</strong><div>${renderImgOrSVGHist('frecuencia', generarSVGSerie(ps.frecuenciaRespiratoria || [], { width:520, height:120, stroke: '#f59e0b' }))}</div></div>`;
         html += `<div style="margin:8px 0"><strong>Presión Arterial (Sistólica/Diastólica)</strong><div>${renderImgOrSVGHist('presion', generarSVGPresionCombinada(ps.presion_combined || [], { width:520, height:120 }))}</div></div>`;
-        html += `</div>`;
+  html += `</div></div>`;
 
         // Observaciones desde historial central
         let observCentral = [];

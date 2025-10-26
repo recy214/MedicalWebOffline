@@ -285,8 +285,7 @@ export function exportarDatosCSV(tipoExportacion) {
           peso: [],
           talla: [],
           frecuenciaRespiratoria: [],
-          presion_sistolica: [],
-          presion_diastolica: []
+          presion_combined: []
         };
 
         // Incluir registro inicial (datos actuales del paciente si existen)
@@ -302,11 +301,12 @@ export function exportarDatosCSV(tipoExportacion) {
             if (datos.talla) parametrosSeries.talla.push({ fecha, valor: parseFloat(datos.talla) });
             if (datos.frecuenciaRespiratoria) parametrosSeries.frecuenciaRespiratoria.push({ fecha, valor: parseFloat(datos.frecuenciaRespiratoria) });
             if (datos.presion) {
-              // intentar parsear "120/80"
+              // intentar parsear "120/80" y guardar combinado
               const m = String(datos.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
               if (m) {
-                parametrosSeries.presion_sistolica.push({ fecha, valor: parseInt(m[1]) });
-                parametrosSeries.presion_diastolica.push({ fecha, valor: parseInt(m[2]) });
+                parametrosSeries.presion_combined.push({ fecha, systolic: parseInt(m[1]), diastolic: parseInt(m[2]) });
+              } else if (!isNaN(Number(datos.presion))) {
+                parametrosSeries.presion_combined.push({ fecha, systolic: Number(datos.presion), diastolic: null });
               }
             }
           });
@@ -322,8 +322,9 @@ export function exportarDatosCSV(tipoExportacion) {
             if (dm.presion) {
               const m = String(dm.presion).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
               if (m) {
-                parametrosSeries.presion_sistolica.push({ fecha, valor: parseInt(m[1]) });
-                parametrosSeries.presion_diastolica.push({ fecha, valor: parseInt(m[2]) });
+                parametrosSeries.presion_combined.push({ fecha, systolic: parseInt(m[1]), diastolic: parseInt(m[2]) });
+              } else if (!isNaN(Number(dm.presion))) {
+                parametrosSeries.presion_combined.push({ fecha, systolic: Number(dm.presion), diastolic: null });
               }
             }
           }
@@ -331,7 +332,7 @@ export function exportarDatosCSV(tipoExportacion) {
 
         // Ordenar series por fecha
         Object.keys(parametrosSeries).forEach(k => {
-          parametrosSeries[k].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+          if (Array.isArray(parametrosSeries[k])) parametrosSeries[k].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
         });
 
         // Construir observaciones agrupadas y sin duplicados: examenVista, examenOido, general
