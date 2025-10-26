@@ -198,6 +198,15 @@ export function renderEstadisticas(estadisticasPrevia = null, options = {}) {
       });
     });
   }
+
+  // Renderizar listado de pacientes y panel de selección
+  try {
+    renderPatientListAndSelector('contenedorEstadisticas');
+  } catch (err) {
+    console.error('Error iniciando listado de pacientes para estadísticas:', err);
+    // Caída segura: intentar generar todas las gráficas
+    generarGraficasPorPaciente().catch(e => console.error('Error generando gráficas por paciente:', e));
+  }
 }
 
 // Renderiza la sección de actividades
@@ -898,4 +907,439 @@ export function insertarEstilosGraficos() {
   `;
   
   document.head.appendChild(style);
+}
+
+// Cargar Chart.js dinámicamente (UMD build) y devolver una promesa que resuelve cuando Chart está disponible
+function loadChartJS() {
+  return new Promise((resolve, reject) => {
+    if (window.Chart) return resolve(window.Chart);
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Chart) resolve(window.Chart);
+      else reject(new Error('Chart.js cargado pero no disponible'));
+    };
+    script.onerror = (e) => reject(new Error('No se pudo cargar Chart.js'));
+    document.head.appendChild(script);
+  });
+}
+
+  // Genera gráficas de línea para cada paciente con los campos: peso, IMC, glucosa, presión arterial y frecuencia respiratoria.
+export async function generarGraficasPorPaciente(containerId = 'contenedorEstadisticas') {
+  // Insertar estilos genéricos si no existen
+  insertarEstilosGraficos();
+
+  const contenedor = document.getElementById(containerId);
+  if (!contenedor) return;
+
+  // Cargar Chart.js
+  try {
+    await loadChartJS();
+  } catch (err) {
+    contenedor.insertAdjacentHTML('beforeend', `<div class="alert-info">No se pudo cargar la librería de gráficas (Chart.js).</div>`);
+    console.error(err);
+    return;
+  }
+
+  // Obtener pacientes desde el modelo
+  const pacientes = pacienteModel.getPacientes();
+  if (!pacientes || pacientes.length === 0) {
+    contenedor.insertAdjacentHTML('beforeend', '<div class="alert-info">No hay pacientes para generar gráficas.</div>');
+    return;
+  }
+  // Limpiar sección de posibles gráficas previas
+  // Si ya existe el wrapper, reutilizarlo (y limpiarlo)
+  let wrapper = document.querySelector('.pacientes-charts-wrapper');
+  if (wrapper && contenedor.contains(wrapper)) {
+    wrapper.innerHTML = '';
+  } else {
+    wrapper = document.createElement('div');
+    wrapper.className = 'pacientes-charts-wrapper';
+    contenedor.appendChild(wrapper);
+  }
+
+  pacientes.forEach(paciente => {
+    // Recolectar series temporales: historialCambios + registro inicial + registro actual
+    const puntos = [];
+
+    // Si existe historialCambios, agregar cada uno
+    if (Array.isArray(paciente.historialCambios)) {
+      paciente.historialCambios.forEach(h => {
+        const fecha = h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null;
+        puntos.push({ fecha, datos: h.datos || h });
+      });
+    }
+
+    // Añadir registro inicial si existe
+    if (paciente.fechaRegistroInicial && paciente.datosMedicos) {
+      puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+    }
+
+    // Asegurar incluir datos médicos actuales si no están en historial
+    if (paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico) {
+      const existe = puntos.some(p => p.fecha === paciente.datosMedicos.fechaRegistroMedico);
+      if (!existe) puntos.push({ fecha: paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+    }
+
+    // Ordenar por fecha
+    puntos.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+
+    // Preparar arrays para cada métrica
+    const labels = [];
+  const seriesPeso = [];
+  const seriesIMC = [];
+  const seriesPresion = [];
+  const seriesGlucosa = [];
+  const seriesFrecuencia = [];
+
+    puntos.forEach(pt => {
+      const fecha = pt.fecha ? new Date(pt.fecha) : null;
+      labels.push(fecha ? fecha.toLocaleDateString('es-ES') : 'Sin fecha');
+      const d = pt.datos || {};
+
+      // Peso
+      const peso = d.peso ? parseFloat(d.peso) : null;
+      seriesPeso.push(isFinite(peso) ? peso : null);
+
+      // Talla en m para IMC
+      const talla = d.talla ? parseFloat(d.talla) : null;
+      const imc = (peso && talla) ? parseFloat((peso / Math.pow((talla/100), 2)).toFixed(1)) : null;
+      seriesIMC.push(imc !== null ? imc : null);
+
+      // Presión arterial: la aplicación guarda presión como 'sistólica/diastólica' (ej: "120/80").
+      // Para respetar el campo 'presión arterial' usamos el valor sistólico como representante numérico
+      // (si deseas otra estrategia podemos usar promedio o el valor diastólico).
+      let presionVal = null;
+      if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) {
+        const parts = d.presion.split('/').map(s => parseInt(s.trim(), 10));
+        presionVal = Number.isFinite(parts[0]) ? parts[0] : null;
+      } else if (d.presion && !isNaN(parseFloat(d.presion))) {
+        // Si por alguna razón la presión se guardó como número (sistólica), usarlo
+        presionVal = parseFloat(d.presion);
+      }
+      seriesPresion.push(presionVal);
+
+      // Glucosa (puede no estar presente) - buscar en el objeto si existe
+      const glucosa = d.glucosa ? parseFloat(d.glucosa) : null;
+      seriesGlucosa.push(isFinite(glucosa) ? glucosa : null);
+
+      // Frecuencia respiratoria
+      const freq = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null;
+      seriesFrecuencia.push(isFinite(freq) ? freq : null);
+    });
+
+    // Crear tarjeta por paciente
+    const card = document.createElement('div');
+    card.className = 'patient-chart-card';
+    card.innerHTML = `
+      <div class="patient-chart-header">
+        <div class="patient-title"><strong>${paciente.nombre} ${paciente.apellidos || ''}</strong> • ${paciente.matricula}</div>
+        <div class="patient-meta">Última actualización: ${paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico ? new Date(paciente.datosMedicos.fechaRegistroMedico).toLocaleString('es-ES') : 'Sin datos'}</div>
+      </div>
+      <div class="patient-chart-body">
+        <canvas id="chart-paciente-${paciente.id}" width="600" height="250"></canvas>
+      </div>
+    `;
+
+    wrapper.appendChild(card);
+
+    // Construir datasets solo con series que contengan al menos un número válido
+    const datasets = [];
+    const colorFor = (i) => ['#06b6d4','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316'][i % 6];
+
+    if (seriesPeso.some(v => v !== null)) {
+      datasets.push({ label: 'Peso (kg)', data: seriesPeso, borderColor: colorFor(0), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+    }
+    if (seriesIMC.some(v => v !== null)) {
+      datasets.push({ label: 'IMC', data: seriesIMC, borderColor: colorFor(1), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+    }
+    if (seriesPresion.some(v => v !== null)) {
+      datasets.push({ label: 'Presión Arterial (mmHg)', data: seriesPresion, borderColor: colorFor(2), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+    }
+    if (seriesGlucosa.some(v => v !== null)) {
+      datasets.push({ label: 'Glucosa (mg/dL)', data: seriesGlucosa, borderColor: colorFor(4), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+    }
+    if (seriesFrecuencia.some(v => v !== null)) {
+      datasets.push({ label: 'Frecuencia Respiratoria (rpm)', data: seriesFrecuencia, borderColor: colorFor(5), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+    }
+
+    // Si no hay datasets, mostrar mensaje dentro de la card
+    if (datasets.length === 0) {
+      const canvas = card.querySelector('canvas');
+      canvas.parentElement.innerHTML = '<div class="alert-info">No hay datos médicos registrados para este paciente.</div>';
+      return;
+    }
+
+    // Crear gráfico
+    try {
+      const ctx = document.getElementById(`chart-paciente-${paciente.id}`).getContext('2d');
+      // eslint-disable-next-line no-undef
+      new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: { mode: 'index', intersect: false }
+          },
+          interaction: { mode: 'nearest', axis: 'x', intersect: false },
+          scales: {
+            x: { display: true, title: { display: false } },
+            y: { display: true, beginAtZero: false }
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Error creando la gráfica para paciente', paciente.id, e);
+    }
+  });
+
+  // Estilos básicos para las cards de paciente (si no existen)
+  if (!document.getElementById('patient-charts-styles')) {
+    const s = document.createElement('style');
+    s.id = 'patient-charts-styles';
+    s.innerHTML = `
+      .pacientes-charts-wrapper { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; margin-top: 20px; }
+      .patient-chart-card { background: white; border-radius: 10px; padding: 12px; border: 1px solid #e6eef2; box-shadow: 0 6px 18px rgba(2,6,23,0.04); }
+      .patient-chart-header { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+      .patient-title { font-size: 1rem; color: #0f172a; }
+      .patient-meta { font-size: 0.8rem; color: #6b7280; }
+      .patient-chart-body { height: 240px; }
+    `;
+    document.head.appendChild(s);
+  }
+}
+
+// Renderiza una lista lateral (o horizontal) de pacientes para seleccionar cuál visualizar
+export function renderPatientListAndSelector(containerId = 'contenedorEstadisticas') {
+  const contenedor = document.getElementById(containerId);
+  if (!contenedor) return;
+
+  // Preparar panel: contenedor principal dividido en lista + area de gráficos
+  // Si ya existe un layout previo, limpiarlo
+  let layout = document.querySelector('.estadisticas-patient-layout');
+  if (layout && contenedor.contains(layout)) {
+    // mantener el layout pero limpiar la lista y las gráficas
+    const listPanel = layout.querySelector('.patient-list-panel');
+    const chartsPanel = layout.querySelector('.patient-charts-panel');
+    if (listPanel) listPanel.innerHTML = '';
+    if (chartsPanel) chartsPanel.innerHTML = '';
+  } else {
+    layout = document.createElement('div');
+    layout.className = 'estadisticas-patient-layout';
+    layout.innerHTML = `
+      <div class="patient-list-panel"></div>
+      <div class="patient-charts-panel" id="patient-charts-panel">
+        <h3 class="patient-charts-title">Graficas Individuales</h3>
+      </div>
+    `;
+    // Insertar layout al final del contenedor para que aparezca después de las secciones previas (p.ej. "Citas por Estado")
+    contenedor.appendChild(layout);
+  }
+
+  const listPanel = layout.querySelector('.patient-list-panel');
+  const chartsPanel = layout.querySelector('.patient-charts-panel');
+
+  // Obtener pacientes
+  const pacientes = pacienteModel.getPacientes();
+  if (!pacientes || pacientes.length === 0) {
+    listPanel.innerHTML = '<div class="alert-info">No hay pacientes registrados</div>';
+    return;
+  }
+
+  // Buscar input (por nombre y matrícula)
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.placeholder = 'Buscar paciente...';
+  searchInput.className = 'patient-search-input';
+
+  const ul = document.createElement('ul');
+  ul.className = 'patient-list-ul';
+
+  // Opción para mostrar todos
+  const allItem = document.createElement('li');
+  allItem.className = 'patient-list-item all-item active';
+  allItem.textContent = 'Mostrar todos';
+  allItem.dataset.id = 'ALL';
+  ul.appendChild(allItem);
+
+  pacientes.forEach(p => {
+    const li = document.createElement('li');
+    li.className = 'patient-list-item';
+    li.textContent = `${p.nombre} ${p.apellidos || ''}`;
+    li.title = `${p.matricula}`;
+    li.dataset.id = p.id;
+    ul.appendChild(li);
+  });
+
+  listPanel.appendChild(searchInput);
+  listPanel.appendChild(ul);
+
+  // Estilos para el panel (inserción ligera si no existen)
+  if (!document.getElementById('patient-list-styles')) {
+    const s = document.createElement('style');
+    s.id = 'patient-list-styles';
+    s.innerHTML = `
+      .estadisticas-patient-layout { display: flex; gap: 18px; margin-bottom: 18px; }
+      .patient-list-panel { width: 260px; background: #fff; border-radius: 8px; padding: 10px; border: 1px solid #e6eef2; height: 380px; overflow: auto; }
+  .patient-charts-panel { flex: 1; }
+  .patient-charts-title { margin: 0 0 12px 6px; font-size: 1.1rem; color: #0f172a; font-weight: 700; }
+      .patient-search-input { width: 100%; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e5e7eb; }
+      .patient-list-ul { list-style: none; padding: 0; margin:0; }
+      .patient-list-item { padding: 10px 8px; border-radius: 6px; cursor: pointer; color: #0f172a; margin-bottom: 6px; }
+      .patient-list-item:hover { background: #f1f5f9; }
+      .patient-list-item.active { background: linear-gradient(90deg,#e6f7fb,#f0f9ff); border-left: 3px solid #06b6d4; }
+      .patient-list-item.all-item { font-weight: 700; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // Filtrado de lista (por nombre y por matrícula)
+  searchInput.addEventListener('input', (e) => {
+    const term = (e.target.value || '').toLowerCase().trim();
+    const items = ul.querySelectorAll('.patient-list-item');
+    items.forEach(it => {
+      const nombre = (it.textContent || '').toLowerCase();
+      const matricula = (it.title || '').toLowerCase();
+      const matches = nombre.includes(term) || matricula.includes(term);
+      it.style.display = matches ? '' : 'none';
+    });
+  });
+
+  // Click en lista: marcar activo y renderizar gráfica del paciente
+  ul.addEventListener('click', (e) => {
+    const li = e.target.closest('.patient-list-item');
+    if (!li) return;
+    // Marcar activo
+    ul.querySelectorAll('.patient-list-item').forEach(i => i.classList.remove('active'));
+    li.classList.add('active');
+
+    const id = li.dataset.id;
+    // Limpiar panel de charts y generar
+    chartsPanel.innerHTML = '';
+    // Usar containerId 'patient-charts-panel' para generar gráficos dentro del panel
+    if (id === 'ALL') {
+      // Generar para todos dentro chartsPanel
+      generarGraficasPorPaciente('patient-charts-panel');
+    } else {
+      // Generar solo para el paciente seleccionado
+      renderSinglePacienteChart(id, 'patient-charts-panel');
+    }
+  });
+
+  // Activar por defecto: seleccionar primer paciente (o 'Mostrar todos')
+  const first = ul.querySelector('.patient-list-item');
+  if (first) first.click();
+}
+
+// Renderiza únicamente la gráfica de un paciente dado en el containerId
+export async function renderSinglePacienteChart(pacienteId, containerId = 'contenedorEstadisticas') {
+  const contenedor = document.getElementById(containerId);
+  if (!contenedor) return;
+
+  // Cargar Chart.js si es necesario
+  try { await loadChartJS(); } catch (e) { console.error(e); contenedor.innerHTML = '<div class="alert-info">No se pudo cargar Chart.js</div>'; return; }
+
+  const paciente = pacienteModel.getPaciente(pacienteId);
+  if (!paciente) {
+    contenedor.innerHTML = '<div class="alert-info">Paciente no encontrado</div>';
+    return;
+  }
+
+  // Limpiar contenedor
+  contenedor.innerHTML = '';
+
+  // Reutilizar parte de la lógica de generación: crear arrays de puntos
+  const puntos = [];
+  if (Array.isArray(paciente.historialCambios)) {
+    paciente.historialCambios.forEach(h => puntos.push({ fecha: h.fecha || (h.datos && h.datos.fechaRegistroMedico) || null, datos: h.datos || h }));
+  }
+  if (paciente.fechaRegistroInicial && paciente.datosMedicos) {
+    puntos.push({ fecha: paciente.fechaRegistroInicial || paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+  }
+  if (paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico) {
+    const existe = puntos.some(p => p.fecha === paciente.datosMedicos.fechaRegistroMedico);
+    if (!existe) puntos.push({ fecha: paciente.datosMedicos.fechaRegistroMedico, datos: paciente.datosMedicos });
+  }
+  puntos.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+
+  const labels = [];
+  const seriesPeso = [];
+  const seriesIMC = [];
+  const seriesPresion = [];
+  const seriesGlucosa = [];
+  const seriesFrecuencia = [];
+
+  puntos.forEach(pt => {
+    const fecha = pt.fecha ? new Date(pt.fecha) : null;
+    labels.push(fecha ? fecha.toLocaleDateString('es-ES') : 'Sin fecha');
+    const d = pt.datos || {};
+    const peso = d.peso ? parseFloat(d.peso) : null;
+    seriesPeso.push(isFinite(peso) ? peso : null);
+    const talla = d.talla ? parseFloat(d.talla) : null;
+    const imc = (peso && talla) ? parseFloat((peso / Math.pow((talla/100), 2)).toFixed(1)) : null;
+    seriesIMC.push(imc !== null ? imc : null);
+    let presionVal = null;
+    if (d.presion && typeof d.presion === 'string' && d.presion.includes('/')) {
+      const parts = d.presion.split('/').map(s => parseInt(s.trim(), 10));
+      presionVal = Number.isFinite(parts[0]) ? parts[0] : null;
+    } else if (d.presion && !isNaN(parseFloat(d.presion))) {
+      presionVal = parseFloat(d.presion);
+    }
+    seriesPresion.push(presionVal);
+    const gluc = d.glucosa ? parseFloat(d.glucosa) : null;
+    seriesGlucosa.push(isFinite(gluc) ? gluc : null);
+    const freq = d.frecuenciaRespiratoria ? parseFloat(d.frecuenciaRespiratoria) : null;
+    seriesFrecuencia.push(isFinite(freq) ? freq : null);
+  });
+
+  const datasets = [];
+  const colorFor = (i) => ['#06b6d4','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316'][i % 6];
+  if (seriesPeso.some(v => v !== null)) datasets.push({ label: 'Peso (kg)', data: seriesPeso, borderColor: colorFor(0), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+  if (seriesIMC.some(v => v !== null)) datasets.push({ label: 'IMC', data: seriesIMC, borderColor: colorFor(1), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+  if (seriesPresion.some(v => v !== null)) datasets.push({ label: 'Presión Arterial (mmHg)', data: seriesPresion, borderColor: colorFor(2), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+  if (seriesGlucosa.some(v => v !== null)) datasets.push({ label: 'Glucosa (mg/dL)', data: seriesGlucosa, borderColor: colorFor(4), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+  if (seriesFrecuencia.some(v => v !== null)) datasets.push({ label: 'Frecuencia Respiratoria (rpm)', data: seriesFrecuencia, borderColor: colorFor(5), backgroundColor: 'transparent', spanGaps: true, tension: 0.2 });
+
+  const card = document.createElement('div');
+  card.className = 'patient-chart-card';
+  card.innerHTML = `
+    <div class="patient-chart-header">
+      <div class="patient-title"><strong>${paciente.nombre} ${paciente.apellidos || ''}</strong> • ${paciente.matricula}</div>
+      <div class="patient-meta">Última actualización: ${paciente.datosMedicos && paciente.datosMedicos.fechaRegistroMedico ? new Date(paciente.datosMedicos.fechaRegistroMedico).toLocaleString('es-ES') : 'Sin datos'}</div>
+    </div>
+    <div class="patient-chart-body">
+      <canvas id="chart-paciente-single-${paciente.id}" width="800" height="300"></canvas>
+    </div>
+  `;
+
+  contenedor.appendChild(card);
+
+  if (datasets.length === 0) {
+    const canvas = card.querySelector('canvas');
+    canvas.parentElement.innerHTML = '<div class="alert-info">No hay datos médicos registrados para este paciente.</div>';
+    return;
+  }
+
+  try {
+    const ctx = document.getElementById(`chart-paciente-single-${paciente.id}`).getContext('2d');
+    // eslint-disable-next-line no-undef
+    new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: { x: { display: true }, y: { display: true, beginAtZero: false } }
+      }
+    });
+  } catch (e) {
+    console.error('Error creando la gráfica para paciente', paciente.id, e);
+  }
 }
