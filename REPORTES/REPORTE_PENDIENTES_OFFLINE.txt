@@ -1,0 +1,143 @@
+REPORTE DE PENDIENTES PARA MODO OFFLINE (PWA)
+Proyecto: medicalweboffline-main
+Fecha: 2025-10-26
+
+1) PORCENTAJE DE AVANCE ACTUAL
+- Soporte offline global (PWA con Service Worker + Manifest): 0% (no existe sw.js ni manifest)
+- Precarga de contenido para offline (localStorage): 70% (funciona, pero con riesgos por uso de ES Modules via Blob)
+- Persistencia de datos local (usuarios, operaciones, pacientes): 85% (localStorage completo en modelos)
+- Navegación SPA offline (carga de páginas desde localStorage): 65% (funcional, pero dependiente de precarga y con riesgo por imports ESM)
+- UX de estado de conexión: 70% (banner UI existente, pero consulta a recurso externo)
+- Seguridad/autenticación offline: 75% (JWT simulado + fallback legacy, correcto para offline local)
+- Infraestructura de servidor local: 90% (server.js correcto para servir estáticos, falta MIME para manifest y headers PWA)
+
+Porcentaje de avance global estimado: 62%
+
+2) HALLAZGOS CLAVE
+- No hay Service Worker ni Manifest Web App: la app no es PWA y no tiene caché controlado para recursos en modo sin conexión real.
+- La estrategia actual carga controladores desde localStorage usando Blob + type="module". Los controladores importan otros módulos (ESM). Al ejecutarlos desde un Blob, los imports relativos pueden fallar (base URL blob:), rompiendo el modo offline.
+- La UI de conexión consulta https://www.google.com/favicon.ico. En redes restringidas o sin internet esto puede fallar o generar ruido; mejor usar un recurso local cacheado por el SW.
+- La precarga en login guarda HTML y JS en localStorage. Con Service Worker, esto puede simplificarse: los módulos se cargan normalmente (import/export) y el SW los sirve del caché offline.
+- Rutas absolutas tipo "/menuInicio.html" dependen del origen actual. En PWA con SW es válido, pero conviene mantener consistencia de rutas y scope del SW.
+
+3) TAREAS LITERALES POR ARCHIVO (CREAR/MODIFICAR)
+
+CREAR archivo /manifest.webmanifest para declarar la PWA (nombre, iconos, start_url, display, theme_color, scope) y permitir instalación.
+
+CREAR archivo /sw.js para:
+- Precache de recursos críticos (index.html, menuInicio.html, pages/*, js/**/*, css/**/*, img/*, favicon.ico, manifest.webmanifest).
+- Gestionar eventos install/activate con versionado de caché y limpieza de caches antiguos.
+- Interceptar fetch con estrategias:
+  - HTML/navigation: NetworkFirst con fallback a caché (o a /offline.html si decides crearlo).
+  - JS/CSS/IMG: CacheFirst con actualización en background (stale-while-revalidate).
+- Manejar skipWaiting/clientsClaim y mensaje de actualización (postMessage) para activar nuevas versiones sin confusión.
+
+CREAR archivo /offline.html (opcional, recomendado) como fallback amigable cuando falle la navegación y no haya caché aún.
+
+MODIFICAR archivo /index.html para que funcione lo siguiente:
+- Agregar <link rel="manifest" href="/manifest.webmanifest"> y <meta name="theme-color" content="#0f5671"> en <head>.
+- Registrar el Service Worker en un script al final (feature detect), por ejemplo: navigator.serviceWorker.register('/sw.js') y mostrar logs mínimos.
+- Mantener importaciones type="module" actuales (seguirán funcionando offline gracias al SW).
+
+MODIFICAR archivo /menuInicio.html para que funcione lo siguiente:
+- Registrar el Service Worker si aún no está registrado (misma lógica que en index.html, o condicional por si ya está activo).
+- Asegurar que existe un contenedor dinámico con id="contenido-dinamico" (requisito de js/views/MenuInicio.js).
+- Incluir <meta name="theme-color"> y el link al manifest para mejorar consistencia visual PWA en esta ruta.
+
+MODIFICAR archivo /js/views/MenuInicio.js para que funcione lo siguiente:
+- Reemplazar la ejecución dinámica de controladores vía Blob + <script type="module" src=blob:...> por importación dinámica estándar usando import() con rutas absolutas (p.ej. '/js/controllers/pacienteController.js'), para que los imports ESM internos se resuelvan correctamente desde el SW en modo offline.
+- Mantener el fallback actual que usa localStorage SOLO si import() falla (por ejemplo, cuando el SW no está disponible). Registrar en consola cuál camino se tomó.
+- Mantener la inyección de HTML desde localStorage si ya fue precargado (esto acelera), pero permitir también fetch normal (que será atendido por el SW y servirá desde caché) si el HTML no está en localStorage.
+
+MODIFICAR archivo /js/controllers/authController.js para que funcione lo siguiente:
+- Después de login exitoso, enviar (opcional) un mensaje al Service Worker para confirmar/preparar precache adicional si se requiere (por ejemplo, canales de postMessage "precache-extra").
+- Conservar precargarPaginasEnStorage, pero hacerla tolerante: si falla fetch, no bloquear flujo (ya lo hace) y confiar en caches del SW para servir páginas/JS.
+- Revisar redirecciones absolutas '/menuInicio.html' versus 'menuInicio.html' y mantener una sola convención (preferible absoluta) para que el SW (scope '/') capturará consistentemente.
+
+MODIFICAR archivo /js/utils/connectionStatusUI.js para que funcione lo siguiente:
+- Cambiar checkConnection() para consultar un recurso local cacheable por el SW (por ejemplo, '/img/uat-logo-2023.png' con cache: 'no-cache') en lugar de 'https://www.google.com/favicon.ico'. Esto evita CORS y falsas alarmas sin internet externo.
+- Mantener el manejo de eventos online/offline del navegador. Mostrar mensaje persistente en offline como ya hace.
+
+MODIFICAR archivo /server.js para que funcione lo siguiente:
+- Agregar MIME type para '.webmanifest': 'application/manifest+json'.
+- Servir sw.js con cabeceras adecuadas (no forzar cacheo agresivo). Opcional: si agregas control fino, establecer Cache-Control: no-cache para /sw.js y manifest.webmanifest, y cache estático razonable para el resto.
+- Confirmar que el SW y el manifest se sirvan desde la raíz ('/'), manteniendo el scope correcto.
+
+MODIFICAR archivo /package.json para que funcione lo siguiente:
+- (Opcional) Agregar script "start:dev" que arranque el server y muestre logs sin compresión. El actual "start": "node server.js" puede permanecer.
+
+MODIFICAR archivo /js/models/storageModel.js para que funcione lo siguiente:
+- Sin cambios obligatorios para offline; validar que todas las claves localStorage relevantes se inicializan sin depender de red (ya correcto). Añadir utilidades de migración/limpieza es opcional.
+
+MODIFICAR archivo /js/models/operacionesModel.js para que funcione lo siguiente:
+- Sin cambios obligatorios para offline; confirmar que no hay dependencias de red. Ya opera 100% en localStorage. Mantener logs.
+
+MODIFICAR archivo /js/controllers/* (pacienteController.js, usersController.js, operacionesController.js, reporteController.js, gestionController.js) para que funcione lo siguiente:
+- No cambiar imports ESM. El SW se encargará de cachear y servir estos módulos en offline. (Importante: por esto se elimina el uso de Blob en MenuInicio.js y se usa import() normal.)
+- Revisar cualquier uso de fetch a recursos no locales y eliminarlos o reemplazarlos por datos locales/cacheados.
+
+MODIFICAR archivo /pages/*.html para que funcione lo siguiente:
+- No cargar scripts críticos con <script src> redundante si MenuInicio.js ya gestiona SPA; asegurarse de que el HTML puede renderearse correctamente al ser inyectado desde localStorage. Si alguna página depende de scripts en línea, considerar mover esa lógica a sus controladores ESM.
+
+MODIFICAR archivo /css/pacientes.css y estilos en HTML para que funcione lo siguiente:
+- Sin cambios funcionales; el SW los precacheará. Usar rutas relativas/absolutas consistentes (pref. absolutas '/css/...').
+
+MODIFICAR archivo /img/* para que funcione lo siguiente:
+- Sin cambios; incluirlos en la lista de precache del SW. Mantener parámetros de versión (?v=1, ?v=2) está bien, pero recuerda actualizarlos cuando cambien los binarios o usa revisionado en el SW.
+
+CREAR archivo /icons/ (opcional si no existen) con iconos 192x192, 256x256, 512x512 referenciados en el manifest.
+
+4) LISTA DE RECURSOS A PRECACHE (BASE, AJUSTABLE)
+- '/index.html'
+- '/menuInicio.html'
+- '/offline.html' (si lo creas)
+- '/pages/categoria-pacientes.html'
+- '/pages/categoria-usuarios-personal.html'
+- '/pages/categoria-operaciones-control.html'
+- '/pages/categoria-reportes.html'
+- '/pages/categoria-gestion.html'
+- '/js/views/MenuInicio.js'
+- '/js/controllers/pacienteController.js'
+- '/js/controllers/usersController.js'
+- '/js/controllers/operacionesController.js'
+- '/js/controllers/reporteController.js'
+- '/js/controllers/gestionController.js'
+- '/js/models/pacienteModel.js'
+- '/js/models/usersModel.js' (si aplica)
+- '/js/models/operacionesModel.js'
+- '/js/models/reporteModel.js'
+- '/js/models/gestionModel.js'
+- '/js/models/storageModel.js'
+- '/js/utils/*.js' (eventBus, eventLogger, modalUtil, userDisplayGlobal, etc.)
+- '/css/*.css'
+- '/img/logo-medical-developer.jpg'
+- '/img/medical-background.png'
+- '/img/uat-logo-2023.png'
+- '/manifest.webmanifest'
+- '/favicon.ico' (si existe)
+
+5) PRUEBAS RECOMENDADAS (POST-IMPLEMENTACIÓN)
+- Iniciar server local, abrir index.html, hacer login online, verificar que el SW se instala y se rellena el caché (Application > Cache Storage en DevTools).
+- Desconectar internet (manteniendo el server local) y refrescar: la app debe cargar completa gracias al SW. Navegar entre categorías desde el menú; los controladores deben resolver sus imports (sin Blob).
+- Borrar manualmente las claves de precarga en localStorage y comprobar que el SW aún sirve las páginas/JS desde caché (la app debe seguir funcionando offline).
+- Cambiar una versión del SW (CACHE_NAME) y verificar que hace limpieza de caches antiguos y se actualiza correctamente (skipWaiting/clientsClaim).
+- Probar la UI de conexión con el nuevo recurso local; verificar que cambia a offline/online según estado real.
+
+6) NOTAS Y RIESGOS
+- La ejecución de controladores ESM desde Blob con type="module" es frágil por las importaciones relativas; por eso se instruye migrar a import() estándar con rutas reales y delegar el offline al SW.
+- El almacenamiento en localStorage es suficiente para este alcance. Si crece el volumen de datos, evaluar IndexedDB en el futuro.
+- Evitar dependencias externas (CDN) no cacheadas por el SW para mantener robustez offline.
+
+7) CHECKLIST RESUMEN
+- [ ] crear archivo /manifest.webmanifest
+- [ ] crear archivo /sw.js
+- [ ] (opcional) crear archivo /offline.html
+- [ ] modificar archivo /index.html para registrar SW y enlazar manifest
+- [ ] modificar archivo /menuInicio.html para registrar SW y asegurar contenedor dinámico
+- [ ] modificar archivo /js/views/MenuInicio.js para usar import() en lugar de Blob y dejar Blob como fallback
+- [ ] modificar archivo /js/utils/connectionStatusUI.js para consultar recurso local
+- [ ] modificar archivo /server.js para MIME '.webmanifest' y cabeceras adecuadas
+- [ ] validar navegación completa offline (SPA) tras desconexión
+
+Fin del reporte.
+

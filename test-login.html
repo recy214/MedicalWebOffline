@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Login - Medical Developer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: white;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(0,0,0,0.3);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 2rem;
+    }
+    .test-section {
+      background: rgba(255,255,255,0.1);
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      border-left: 5px solid #4ade80;
+    }
+    .test-section.error {
+      border-left-color: #ef4444;
+    }
+    .test-section.warning {
+      border-left-color: #f59e0b;
+    }
+    .test-title {
+      font-size: 1.3rem;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .test-result {
+      font-size: 1rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .btn {
+      background: linear-gradient(135deg, #4ade80, #22c55e);
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 20px;
+      transition: all 0.3s;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(74, 222, 128, 0.4);
+    }
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+    .success { color: #4ade80; }
+    .error { color: #ef4444; }
+    .warning { color: #f59e0b; }
+    .info { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Test de Login - Medical Developer</h1>
+
+    <button class="btn" onclick="runDiagnostic()">🚀 Ejecutar Diagnóstico Completo</button>
+    <button class="btn" onclick="testLogin()">🔐 Test Login (admin/admin123)</button>
+    <button class="btn btn-danger" onclick="clearAll()">🧹 Limpiar Todo y Reiniciar</button>
+
+    <div id="results"></div>
+  </div>
+
+  <script type="module">
+    window.results = document.getElementById('results');
+
+    function addSection(title, content, type = 'success') {
+      const section = document.createElement('div');
+      section.className = `test-section ${type}`;
+      section.innerHTML = `
+        <div class="test-title">${title}</div>
+        <div class="test-result">${content}</div>
+      `;
+      results.appendChild(section);
+    }
+
+    window.runDiagnostic = async function() {
+      results.innerHTML = '';
+
+      addSection('🔍 Iniciando diagnóstico...', 'Por favor espera...', 'info');
+
+      // Test 1: Service Worker
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && reg.active) {
+          addSection(
+            '✅ Test 1: Service Worker',
+            `Estado: ${reg.active.state}\nScope: ${reg.scope}`,
+            'success'
+          );
+        } else if (reg) {
+          addSection(
+            '⚠️ Test 1: Service Worker',
+            'Instalado pero no activo. Intenta refrescar la página.',
+            'warning'
+          );
+        } else {
+          addSection(
+            '❌ Test 1: Service Worker',
+            'NO INSTALADO\n\n❌ PROBLEMA DETECTADO:\nNecesitas visitar http://localhost:3001 con conexión\npara instalar el Service Worker por primera vez.',
+            'error'
+          );
+        }
+      } catch (e) {
+        addSection('❌ Test 1: Service Worker', `Error: ${e.message}`, 'error');
+      }
+
+      // Test 2: Cache
+      try {
+        const cache = await caches.open('medical-v1');
+        const keys = await cache.keys();
+        if (keys.length >= 41) {
+          addSection(
+            '✅ Test 2: Cache Storage',
+            `Archivos en cache: ${keys.length}/41\nCache completo y funcional`,
+            'success'
+          );
+        } else if (keys.length > 0) {
+          addSection(
+            '⚠️ Test 2: Cache Storage',
+            `Archivos en cache: ${keys.length}/41\n\n⚠️ PROBLEMA DETECTADO:\nCache incompleto. Recomendación:\n1. Limpia el cache (botón abajo)\n2. Recarga la página con Ctrl+Shift+R`,
+            'warning'
+          );
+        } else {
+          addSection(
+            '❌ Test 2: Cache Storage',
+            `❌ PROBLEMA DETECTADO:\nCache vacío. Necesitas:\n1. Conexión a internet\n2. Visitar http://localhost:3001\n3. Esperar a que se complete el precache`,
+            'error'
+          );
+        }
+      } catch (e) {
+        addSection('❌ Test 2: Cache Storage', `Error: ${e.message}`, 'error');
+      }
+
+      // Test 3: localStorage
+      try {
+        localStorage.setItem('_test_', '1');
+        localStorage.removeItem('_test_');
+        addSection(
+          '✅ Test 3: localStorage',
+          'Funcionando correctamente',
+          'success'
+        );
+      } catch (e) {
+        addSection(
+          '❌ Test 3: localStorage',
+          `❌ PROBLEMA DETECTADO:\n${e.message}\n\nPosibles causas:\n- Modo incógnito/privado\n- Extensiones de privacidad\n- Cuota de storage llena\n\nSolución: Usar navegador normal, desactivar extensiones`,
+          'error'
+        );
+      }
+
+      // Test 4: Usuarios
+      try {
+        const { authModel } = await import('./js/models/storageModel.js');
+        const users = authModel.getUsers();
+        if (users.length > 0) {
+          addSection(
+            '✅ Test 4: Usuarios',
+            `Total: ${users.length}\n${users.map(u => `- ${u.matricula} (${u.rol})`).join('\n')}`,
+            'success'
+          );
+        } else {
+          addSection(
+            '❌ Test 4: Usuarios',
+            '❌ PROBLEMA DETECTADO:\nNo hay usuarios en localStorage\n\nSolución: El sistema inicializará usuarios por defecto en el próximo login',
+            'error'
+          );
+        }
+      } catch (e) {
+        addSection('❌ Test 4: Usuarios', `Error: ${e.message}`, 'error');
+      }
+
+      // Test 5: JWT
+      const jwtEnabled = localStorage.getItem('jwtEnabled');
+      addSection(
+        '📋 Test 5: Sistema JWT',
+        `Estado: ${jwtEnabled === 'true' ? 'ACTIVO ✅' : 'DESACTIVADO (usando legacy)'}`,
+        'info'
+      );
+
+      // Test 6: Conexión
+      addSection(
+        '🌐 Test 6: Conexión',
+        `navigator.onLine: ${navigator.onLine ? 'ONLINE' : 'OFFLINE'}`,
+        'info'
+      );
+
+      // Resumen final
+      setTimeout(() => {
+        addSection(
+          '🎯 Diagnóstico Completado',
+          'Revisa los resultados arriba para identificar problemas.',
+          'info'
+        );
+      }, 1000);
+    };
+
+    window.testLogin = async function() {
+      results.innerHTML = '';
+      addSection('🔐 Probando login...', 'Ejecutando test con admin/admin123', 'info');
+
+      try {
+        const { authModel } = await import('./js/models/storageModel.js');
+
+        // Test de validación
+        const isValid = authModel.validateUser('admin', 'admin123');
+        if (!isValid) {
+          addSection(
+            '❌ Validación Fallida',
+            '❌ PROBLEMA DETECTADO:\nCredenciales no válidas o usuarios no cargados',
+            'error'
+          );
+          return;
+        }
+
+        addSection(
+          '✅ Validación OK',
+          `Usuario encontrado: ${isValid.nombre} (${isValid.rol})`,
+          'success'
+        );
+
+        // Test de login con JWT
+        const result = authModel.loginWithJWT('admin', 'admin123');
+
+        if (result.success) {
+          addSection(
+            '✅ Login Exitoso',
+            `✅ EL LOGIN FUNCIONA CORRECTAMENTE\n\nUsuario: ${result.usuario.nombre}\nRol: ${result.usuario.rol}\nToken generado: ${result.token ? 'Sí' : 'No (modo fallback)'}`,
+            'success'
+          );
+
+          // Verificar que se guardó en localStorage
+          const savedUser = authModel.getCurrentUser();
+          if (savedUser) {
+            addSection(
+              '✅ Sesión Guardada',
+              `Usuario guardado en localStorage correctamente`,
+              'success'
+            );
+          } else {
+            addSection(
+              '⚠️ Sesión No Guardada',
+              'El login funcionó pero no se guardó la sesión',
+              'warning'
+            );
+          }
+
+          // Limpiar sesión de prueba
+          authModel.logout();
+          addSection(
+            '🧹 Limpieza',
+            'Sesión de prueba cerrada (logout automático)',
+            'info'
+          );
+
+        } else {
+          addSection(
+            '❌ Login Fallido',
+            `❌ PROBLEMA DETECTADO:\n${result.error}`,
+            'error'
+          );
+        }
+
+      } catch (e) {
+        addSection(
+          '❌ Error Crítico',
+          `Error ejecutando test:\n${e.message}\n\nStack:\n${e.stack}`,
+          'error'
+        );
+      }
+    };
+
+    window.clearAll = async function() {
+      if (!confirm('¿Estás seguro? Esto eliminará TODOS los datos (cache, localStorage, Service Worker)')) {
+        return;
+      }
+
+      results.innerHTML = '';
+      addSection('🧹 Limpiando...', 'Por favor espera...', 'info');
+
+      try {
+        // 1. Unregister Service Worker
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.unregister();
+          addSection('✅ Service Worker eliminado', 'Desregistrado correctamente', 'success');
+        }
+
+        // 2. Delete caches
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          await caches.delete(name);
+        }
+        addSection('✅ Cache eliminado', `${cacheNames.length} caches borrados`, 'success');
+
+        // 3. Clear localStorage
+        localStorage.clear();
+        addSection('✅ localStorage limpio', 'Todos los datos borrados', 'success');
+
+        // 4. Reload
+        addSection(
+          '🔄 Recargando...',
+          'La página se recargará en 3 segundos.\nVisita http://localhost:3001 después de esto.',
+          'info'
+        );
+
+        setTimeout(() => {
+          location.reload(true);
+        }, 3000);
+
+      } catch (e) {
+        addSection('❌ Error en limpieza', e.message, 'error');
+      }
+    };
+
+    // Auto-run en carga
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🔍 Test Login cargado. Usa los botones para ejecutar pruebas.');
+    });
+  </script>
+</body>
+</html>
+

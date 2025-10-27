@@ -1,0 +1,22 @@
+{
+  "name": "Medical Web Offline",
+  "short_name": "MedicalWeb",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0f5671",
+  "background_color": "#ffffff",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/img/uat-logo-2023.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/img/logo-medical-developer.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
+
