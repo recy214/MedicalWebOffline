@@ -15,6 +15,7 @@ import {
     setDoc,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+import { offlineStorage } from './storageModel.js';
 
 // --- CONSTANTES ---
 const PACIENTES_COLLECTION = "pacientes";
@@ -170,6 +171,16 @@ export const pacienteModel = {
 
       console.log('✅ Paciente agregado a Firebase con ID:', docRef.id);
 
+      // Además guardar copia local (incluye la foto si existe) para disponibilidad offline
+      try {
+        // Incluir el ID de Firebase para poder relacionar después
+        const pacienteLocal = { id: docRef.id, ...pacienteParaGuardar };
+        offlineStorage.savePatientOffline(pacienteLocal);
+        console.log('📁 Copia offline guardada para paciente:', docRef.id);
+      } catch (localErr) {
+        console.warn('⚠️ No se pudo guardar copia offline del paciente:', localErr);
+      }
+
       return {
         id: docRef.id,
         ...pacienteParaGuardar
@@ -178,16 +189,14 @@ export const pacienteModel = {
       console.error('❌ Error agregando paciente a Firebase:', error);
       console.log('🔄 Intentando fallback a localStorage...');
 
-      // Fallback a localStorage
+      // Fallback a localStorage usando offlineStorage para mantener consistencia
       try {
-        const lista = read('pacientes') || [];
-
         // Asegurar id único para localStorage
-        if (!paciente.id) paciente.id = 'P' + Date.now().toString().slice(-8);
+        if (!paciente.id) paciente.id = 'offline_' + Date.now().toString().slice(-8);
         paciente.fechaRegistro = paciente.fechaRegistro || new Date().toISOString();
 
         // Inicializar campos médicos
-        paciente.datosMedicos = {
+        paciente.datosMedicos = paciente.datosMedicos || {
           temperatura: null,
           presion: null,
           peso: null,
@@ -198,13 +207,11 @@ export const pacienteModel = {
           fechaRegistroMedico: null
         };
 
-        paciente.status = 'sin_datos_medicos';
+        paciente.status = paciente.status || 'sin_datos_medicos';
 
-        lista.push(paciente);
-        write('pacientes', lista);
-
-        console.log('📱 Paciente guardado en localStorage como fallback');
-        return paciente;
+        const saved = offlineStorage.savePatientOffline(paciente);
+        console.log('📱 Paciente guardado en localStorage (offlineStorage) como fallback:', saved.id);
+        return saved;
       } catch (localError) {
         console.error('❌ Error guardando paciente en localStorage:', localError);
         throw new Error('No se pudo guardar el paciente: ' + error.message);

@@ -158,6 +158,132 @@ export function renderPacienteForm() {
   
   section.innerHTML = html;
 
+  // --- CAMARA / FOTO: elementos para tomar foto del paciente ---
+  // Añadimos controles debajo del formulario para manejar cámara y preview.
+  const formEl = document.getElementById('formNuevoPaciente');
+  if (formEl) {
+    // Crear bloque de cámara
+    const cameraBlock = document.createElement('div');
+    cameraBlock.className = 'camera-block detail-card';
+    cameraBlock.style.marginTop = '12px';
+    cameraBlock.innerHTML = `
+      <h4>📷 Foto del Paciente (opcional)</h4>
+      <div class="camera-grid" style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="min-width:260px;">
+          <video id="videoPreview" autoplay muted playsinline style="width:260px;height:195px;background:#000;border-radius:6px;display:none;object-fit:cover;border:1px solid #e5e7eb;"></video>
+          <canvas id="photoCanvas" style="display:none;"></canvas>
+          <img id="fotoPreview" src="" alt="Previsualización" style="width:96px;height:96px;border-radius:8px;object-fit:cover;border:1px solid #e5e7eb;background:#f3f4f6;display:inline-block;margin-top:8px;" />
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <p class="form-text">Puedes tomar una foto usando la cámara de la laptop. Si el paciente no desea usar su imagen, pulsa "Usar silueta" y no se guardará foto.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btnOpenCamera" class="btn-primary small-btn">Abrir cámara</button>
+            <button type="button" id="btnTakePhoto" class="btn-primary small-btn" disabled>Tomar foto</button>
+            <button type="button" id="btnUseSilhouette" class="btn-secondary small-btn">Usar silueta (sin foto)</button>
+            <button type="button" id="btnRemovePhoto" class="btn-secondary small-btn" style="display:none;">Eliminar foto</button>
+          </div>
+          <input type="hidden" id="fotoDataUrl" name="foto">
+        </div>
+      </div>
+    `;
+
+    formEl.parentNode.insertBefore(cameraBlock, formEl.nextSibling);
+
+    // Lógica de cámara
+    (function(){
+      const btnOpenCamera = document.getElementById('btnOpenCamera');
+      const btnTakePhoto = document.getElementById('btnTakePhoto');
+      const btnUseSilhouette = document.getElementById('btnUseSilhouette');
+      const btnRemovePhoto = document.getElementById('btnRemovePhoto');
+      const video = document.getElementById('videoPreview');
+      const canvas = document.getElementById('photoCanvas');
+      const fotoPreview = document.getElementById('fotoPreview');
+      const inputFoto = document.getElementById('fotoDataUrl');
+      let stream = null;
+
+      async function startCamera() {
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Tu navegador no soporta acceso a cámara');
+            return;
+          }
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+          video.srcObject = stream;
+          video.style.display = 'block';
+          fotoPreview.style.display = inputFoto.value ? 'inline-block' : 'none';
+          btnTakePhoto.disabled = false;
+          btnRemovePhoto.style.display = inputFoto.value ? 'inline-block' : 'none';
+        } catch (e) {
+          console.error('No se pudo acceder a la cámara:', e);
+          alert('No se pudo acceder a la cámara. Revisa permisos o usa otro navegador.');
+        }
+      }
+
+      function stopCamera() {
+        try {
+          if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            stream = null;
+          }
+        } catch (e) { /* noop */ }
+        video.style.display = 'none';
+        btnTakePhoto.disabled = true;
+      }
+
+      function takePhoto() {
+        try {
+          const w = video.videoWidth || 640;
+          const h = video.videoHeight || 480;
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/png');
+          inputFoto.value = dataUrl;
+          fotoPreview.src = dataUrl;
+          fotoPreview.style.display = 'inline-block';
+          btnRemovePhoto.style.display = 'inline-block';
+          stopCamera();
+        } catch (e) {
+          console.error('Error tomando foto:', e);
+          alert('No se pudo tomar la foto. Intenta nuevamente.');
+        }
+      }
+
+      function useSilhouette() {
+        // Borrar cualquier foto tomada
+        inputFoto.value = '';
+        fotoPreview.src = '';
+        fotoPreview.style.display = 'inline-block';
+        // Mostrar silueta gris
+        fotoPreview.style.background = '#f3f4f6';
+        fotoPreview.style.border = '1px solid #e5e7eb';
+        btnRemovePhoto.style.display = 'none';
+        stopCamera();
+      }
+
+      function removePhoto() {
+        inputFoto.value = '';
+        fotoPreview.src = '';
+        fotoPreview.style.display = 'inline-block';
+        fotoPreview.style.background = '#f3f4f6';
+        btnRemovePhoto.style.display = 'none';
+      }
+
+      // Eventos
+      btnOpenCamera.addEventListener('click', (e) => { e.preventDefault(); startCamera(); });
+      btnTakePhoto.addEventListener('click', (e) => { e.preventDefault(); takePhoto(); });
+      btnUseSilhouette.addEventListener('click', (e) => { e.preventDefault(); useSilhouette(); });
+      btnRemovePhoto.addEventListener('click', (e) => { e.preventDefault(); removePhoto(); });
+
+      // Detener cámara cuando se resetea el formulario
+      formEl.addEventListener('reset', () => { stopCamera(); removePhoto(); });
+
+      // Al salir de la página, asegurar stop
+      window.addEventListener('beforeunload', () => { stopCamera(); });
+    })();
+  }
+
   // --- LÓGICA DE JAVASCRIPT PARA FACULTADES Y CARRERAS ---
   const facultadSelect = document.getElementById('facultad');
   const carreraSelect = document.getElementById('carrera');

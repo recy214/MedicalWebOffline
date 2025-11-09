@@ -1477,6 +1477,101 @@
                 </div>
               </div>
               
+                <!-- Bloque de cámara para tomar foto (registro estático) -->
+                <div class="detail-card" style="margin-top:12px;">
+                  <h4>📷 Foto del Paciente (opcional)</h4>
+                  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                    <div style="min-width:260px;">
+                      <video id="videoPreview_reg" autoplay muted playsinline style="width:260px;height:195px;background:#000;border-radius:6px;display:none;object-fit:cover;border:1px solid #e5e7eb;"></video>
+                      <canvas id="photoCanvas_reg" style="display:none;"></canvas>
+                      <img id="fotoPreview_reg" src="" alt="Previsualización" style="width:96px;height:96px;border-radius:8px;object-fit:cover;border:1px solid #e5e7eb;background:#f3f4f6;display:inline-block;margin-top:8px;" />
+                    </div>
+                    <div style="flex:1;min-width:220px;">
+                      <p class="form-text">Puedes tomar una foto usando la cámara de la laptop. Si el paciente no desea usar su imagen, pulsa "Usar silueta" y no se guardará foto.</p>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" id="btnOpenCamera_reg" class="btn-primary small-btn">Abrir cámara</button>
+                        <button type="button" id="btnTakePhoto_reg" class="btn-primary small-btn" disabled>Tomar foto</button>
+                        <button type="button" id="btnUseSilhouette_reg" class="btn-secondary small-btn">Usar silueta (sin foto)</button>
+                        <button type="button" id="btnRemovePhoto_reg" class="btn-secondary small-btn" style="display:none;">Eliminar foto</button>
+                      </div>
+                      <input type="hidden" id="fotoDataUrl_reg" name="foto">
+                    </div>
+                  </div>
+                </div>
+
+                <script>
+                  (function(){
+                    const btnOpen = document.getElementById('btnOpenCamera_reg');
+                    const btnTake = document.getElementById('btnTakePhoto_reg');
+                    const btnSil = document.getElementById('btnUseSilhouette_reg');
+                    const btnRem = document.getElementById('btnRemovePhoto_reg');
+                    const video = document.getElementById('videoPreview_reg');
+                    const canvas = document.getElementById('photoCanvas_reg');
+                    const preview = document.getElementById('fotoPreview_reg');
+                    const inputFoto = document.getElementById('fotoDataUrl_reg');
+                    let stream = null;
+
+                    async function startCamera() {
+                      try {
+                        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                          alert('Tu navegador no soporta acceso a cámara');
+                          return;
+                        }
+                        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                        video.srcObject = stream;
+                        video.style.display = 'block';
+                        btnTake.disabled = false;
+                        btnRem.style.display = inputFoto.value ? 'inline-block' : 'none';
+                      } catch (e) {
+                        console.error('No se pudo acceder a la cámara:', e);
+                        alert('No se pudo acceder a la cámara. Revisa permisos o usa otro navegador.');
+                      }
+                    }
+
+                    function stopCamera() {
+                      try { if (stream) { stream.getTracks().forEach(t=>t.stop()); stream = null; } } catch(e){}
+                      video.style.display = 'none';
+                      btnTake.disabled = true;
+                    }
+
+                    function takePhoto() {
+                      try {
+                        const w = video.videoWidth || 640;
+                        const h = video.videoHeight || 480;
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video,0,0,w,h);
+                        const dataUrl = canvas.toDataURL('image/png');
+                        inputFoto.value = dataUrl;
+                        preview.src = dataUrl;
+                        preview.style.display = 'inline-block';
+                        btnRem.style.display = 'inline-block';
+                        stopCamera();
+                      } catch (e) { console.error('Error tomando foto:', e); alert('No se pudo tomar la foto. Intenta nuevamente.'); }
+                    }
+
+                    function useSilhouette() { inputFoto.value = ''; preview.src = ''; preview.style.display = 'inline-block'; preview.style.background = '#f3f4f6'; btnRem.style.display = 'none'; stopCamera(); }
+                    function removePhoto() { inputFoto.value = ''; preview.src = ''; preview.style.display = 'inline-block'; preview.style.background = '#f3f4f6'; btnRem.style.display = 'none'; }
+
+                    if (btnOpen) btnOpen.addEventListener('click', (e)=>{ e.preventDefault(); startCamera(); });
+                    if (btnTake) btnTake.addEventListener('click', (e)=>{ e.preventDefault(); takePhoto(); });
+                    if (btnSil) btnSil.addEventListener('click', (e)=>{ e.preventDefault(); useSilhouette(); });
+                    if (btnRem) btnRem.addEventListener('click', (e)=>{ e.preventDefault(); removePhoto(); });
+
+                    // Detener cámara al salir o al enviar el formulario
+                    const form = document.getElementById('registrar-paciente-form');
+                    if (form) {
+                      form.addEventListener('submit', ()=>{ stopCamera(); });
+                      // Si hay botón de limpiar tipo button, intentar limpiar preview
+                      form.addEventListener('click', (e)=>{
+                        if (e.target && e.target.type === 'reset') { stopCamera(); removePhoto(); }
+                      });
+                    }
+
+                    window.addEventListener('beforeunload', ()=>{ stopCamera(); });
+                  })();
+                </script>
+
                 <div class="form-actions">
                   <button type="button" class="btn-secondary">
                     🧹 Limpiar

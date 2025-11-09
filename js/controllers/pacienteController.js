@@ -534,6 +534,21 @@ export async function handlePacienteSubmit(event) {
     fechaRegistro: new Date().toISOString()
     // El status se asigna automáticamente en el modelo como 'sin_datos_medicos'
   };
+
+  // Manejo de la foto tomada desde la cámara (si existe)
+  try {
+    const fotoData = formData.get('foto');
+    if (fotoData && fotoData.trim() !== '') {
+      // Guardar la imagen como dataURL en el campo 'foto' para que el reporte la use
+      nuevoPaciente.foto = fotoData;
+      nuevoPaciente.fotoConsentida = true;
+    } else {
+      // No se guardó foto (usar silueta en el reporte)
+      nuevoPaciente.fotoConsentida = false;
+    }
+  } catch (e) {
+    console.warn('No se pudo procesar la foto del formulario:', e);
+  }
   
   try {
     // Verificar si ya existe un paciente con esa matrícula
